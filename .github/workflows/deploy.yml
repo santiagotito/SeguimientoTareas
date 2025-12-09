@@ -29,6 +29,7 @@ jobs:
       env:
         VITE_GOOGLE_SHEETS_API_KEY: ${{ secrets.VITE_GOOGLE_SHEETS_API_KEY }}
         VITE_GOOGLE_SHEETS_ID: ${{ secrets.VITE_GOOGLE_SHEETS_ID }}
+        VITE_APPS_SCRIPT_URL: ${{ secrets.VITE_APPS_SCRIPT_URL }}
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       run: npm run build
       
