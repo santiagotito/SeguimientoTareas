@@ -6,11 +6,18 @@ interface GanttViewProps {
   users: User[];
 }
 
-const getDiffInDays = (date1: Date, date2: Date) => {
+// Convertir string YYYY-MM-DD a Date sin zona horaria
+const dateFromString = (dateStr: string): Date => {
+  const [year, month, day] = dateStr.split('T')[0].split('-').map(Number);
+  return new Date(year, month - 1, day);
+};
+
+// Diferencia en días entre dos strings de fecha
+const getDiffInDays = (date1Str: string, date2Str: string) => {
+  const date1 = dateFromString(date1Str);
+  const date2 = dateFromString(date2Str);
   const oneDay = 24 * 60 * 60 * 1000;
-  const d1 = new Date(date1.getFullYear(), date1.getMonth(), date1.getDate());
-  const d2 = new Date(date2.getFullYear(), date2.getMonth(), date2.getDate());
-  return Math.round((d1.getTime() - d2.getTime()) / oneDay);
+  return Math.round((date1.getTime() - date2.getTime()) / oneDay);
 };
 
 const addDaysToDate = (date: Date, days: number) => {
@@ -27,19 +34,21 @@ const getStartOfWeek = (date: Date) => {
 };
 
 export const GanttView: React.FC<GanttViewProps> = ({ tasks, users }) => {
-  const sortedTasks = [...tasks].sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+  const sortedTasks = [...tasks].sort((a, b) => a.startDate.localeCompare(b.startDate));
   
   const minDate = sortedTasks.length 
-    ? getStartOfWeek(new Date(sortedTasks[0].startDate)) 
+    ? getStartOfWeek(dateFromString(sortedTasks[0].startDate)) 
     : new Date();
     
   const daysToShow = 30;
   const dates = Array.from({ length: daysToShow }, (_, i) => addDaysToDate(minDate, i));
+  
+  // Convertir minDate a string para comparaciones
+  const minDateStr = `${minDate.getFullYear()}-${String(minDate.getMonth() + 1).padStart(2, '0')}-${String(minDate.getDate()).padStart(2, '0')}`;
 
   const getTaskStyle = (task: Task) => {
-    const start = new Date(task.startDate);
-    const offset = getDiffInDays(start, minDate);
-    const duration = getDiffInDays(new Date(task.dueDate), start) + 1;
+    const offset = getDiffInDays(task.startDate, minDateStr);
+    const duration = getDiffInDays(task.dueDate, task.startDate) + 1;
     
     const left = Math.max(0, offset);
     const width = Math.max(1, duration);
@@ -89,13 +98,13 @@ export const GanttView: React.FC<GanttViewProps> = ({ tasks, users }) => {
                   </div>
                 </div>
                 
-                {getDiffInDays(new Date(task.dueDate), minDate) >= 0 && (
+                {getDiffInDays(task.dueDate, minDateStr) >= 0 && (
                   <div 
                     className="h-6 rounded-md shadow-sm relative group opacity-90 hover:opacity-100 transition-opacity"
                     style={getTaskStyle(task)}
                   >
                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-white whitespace-nowrap overflow-hidden text-ellipsis w-full px-1">
-                       {task.status !== 'todo' && `${getDiffInDays(new Date(task.dueDate), new Date(task.startDate)) + 1}d`}
+                       {task.status !== 'todo' && `${getDiffInDays(task.dueDate, task.startDate) + 1}d`}
                      </span>
                   </div>
                 )}

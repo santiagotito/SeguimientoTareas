@@ -17,7 +17,10 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, users, onDragStart }) 
   };
 
   const assignees = users.filter(u => task.assigneeIds?.includes(u.id) || u.id === task.assigneeId);
-  const isOverdue = task.status !== 'done' && new Date(task.dueDate) < new Date();
+  
+  // Comparar fechas en formato YYYY-MM-DD (sin conversión a Date para evitar zona horaria)
+  const today = new Date().toISOString().split('T')[0]; // "2025-12-09"
+  const isOverdue = task.status !== 'done' && task.dueDate < today;
 
   return (
     <div
@@ -63,7 +66,11 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, users, onDragStart }) 
       <div className="flex items-center justify-between text-xs text-gray-400 pt-2 border-t border-gray-50 mt-2">
         <div className={`flex items-center gap-1 ${isOverdue ? 'text-red-600 font-semibold' : ''}`}>
           <Calendar size={12} />
-          <span>{new Date(task.dueDate).toLocaleDateString()}</span>
+          <span>{(() => {
+            // Formatear fecha directamente desde string YYYY-MM-DD sin conversión
+            const [year, month, day] = task.dueDate.split('T')[0].split('-');
+            return `${parseInt(day)}/${parseInt(month)}/${year}`;
+          })()}</span>
         </div>
         {task.tags.length > 0 && (
           <span className="bg-gray-100 px-1.5 py-0.5 rounded text-gray-500">

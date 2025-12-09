@@ -22,6 +22,33 @@ import {
   Save
 } from 'lucide-react';
 
+// Helper para obtener fecha local en formato YYYY-MM-DD sin zona horaria
+const getLocalDateString = (date?: Date | string | null): string => {
+  let d: Date;
+  
+  if (!date) {
+    d = new Date();
+  } else if (typeof date === 'string') {
+    // Si ya es YYYY-MM-DD, devolverlo tal cual
+    if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return date;
+    }
+    // Si tiene hora, extraer solo la fecha
+    if (date.includes('T')) {
+      return date.split('T')[0];
+    }
+    d = new Date(date);
+  } else {
+    d = date;
+  }
+  
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  
+  return `${year}-${month}-${day}`;
+};
+
 const INITIAL_TASKS: Task[] = [];
 
 const App: React.FC = () => {
@@ -128,8 +155,8 @@ const App: React.FC = () => {
       priority: taskData.priority || 'medium',
       assigneeId: taskData.assigneeIds?.[0] || null,
       assigneeIds: taskData.assigneeIds || [],
-      startDate: taskData.startDate || new Date().toISOString(),
-      dueDate: taskData.dueDate || new Date(Date.now() + 86400000 * 7).toISOString(),
+      startDate: getLocalDateString(taskData.startDate),
+      dueDate: getLocalDateString(taskData.dueDate || new Date(Date.now() + 86400000 * 7)),
       tags: taskData.tags || []
     };
     saveTasks([...tasks, newTask]);
@@ -194,18 +221,14 @@ const App: React.FC = () => {
       if (!hasAssignee) return false;
     }
     
-    // Filtro por fecha desde
-    if (dateFrom) {
-      const taskDate = new Date(task.dueDate);
-      const fromDate = new Date(dateFrom);
-      if (taskDate < fromDate) return false;
+    // Filtro por fecha desde (comparación de strings YYYY-MM-DD)
+    if (dateFrom && task.dueDate < dateFrom) {
+      return false;
     }
     
-    // Filtro por fecha hasta
-    if (dateTo) {
-      const taskDate = new Date(task.dueDate);
-      const toDate = new Date(dateTo);
-      if (taskDate > toDate) return false;
+    // Filtro por fecha hasta (comparación de strings YYYY-MM-DD)
+    if (dateTo && task.dueDate > dateTo) {
+      return false;
     }
     
     return true;
@@ -332,8 +355,9 @@ const App: React.FC = () => {
           <div className="flex items-center gap-4">
              {/* Alerta de tareas vencidas */}
              {(() => {
+               const today = new Date().toISOString().split('T')[0];
                const overdueTasks = tasks.filter(t => 
-                 t.status !== 'done' && new Date(t.dueDate) < new Date()
+                 t.status !== 'done' && t.dueDate < today
                );
                if (overdueTasks.length > 0) {
                  return (
@@ -560,8 +584,8 @@ const TaskModal: React.FC<{
     status: task?.status || 'todo',
     priority: task?.priority || 'medium',
     assigneeIds: task?.assigneeIds || [],
-    startDate: task?.startDate?.split('T')[0] || new Date().toISOString().split('T')[0],
-    dueDate: task?.dueDate?.split('T')[0] || new Date(Date.now() + 86400000 * 7).toISOString().split('T')[0],
+    startDate: getLocalDateString(task?.startDate),
+    dueDate: getLocalDateString(task?.dueDate || new Date(Date.now() + 86400000 * 7)),
     tags: task?.tags?.join(', ') || ''
   });
 
@@ -571,8 +595,8 @@ const TaskModal: React.FC<{
       ...task,
       ...formData,
       assigneeId: formData.assigneeIds[0] || null,
-      startDate: new Date(formData.startDate).toISOString(),
-      dueDate: new Date(formData.dueDate).toISOString(),
+      startDate: getLocalDateString(formData.startDate),
+      dueDate: getLocalDateString(formData.dueDate),
       tags: formData.tags.split(',').map(t => t.trim()).filter(Boolean)
     });
   };
