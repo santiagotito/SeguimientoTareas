@@ -1,17 +1,22 @@
 import React, { useState } from 'react';
-import { User, Status, Priority } from '../types';
-import { Filter, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { User, Status, Priority, Client } from '../types';
+import { Filter, X, ChevronDown, ChevronUp, Search } from 'lucide-react';
 
 interface FiltersProps {
   users: User[];
+  clients: Client[];
   selectedStatuses: Status[];
   selectedPriorities: Priority[];
   selectedAssignees: string[];
+  selectedClients: string[];
+  searchTaskName: string;
   dateFrom: string;
   dateTo: string;
   onStatusChange: (status: Status) => void;
   onPriorityChange: (priority: Priority) => void;
   onAssigneeChange: (userId: string) => void;
+  onClientChange: (clientId: string) => void;
+  onSearchChange: (search: string) => void;
   onDateFromChange: (date: string) => void;
   onDateToChange: (date: string) => void;
   onClearFilters: () => void;
@@ -19,14 +24,19 @@ interface FiltersProps {
 
 export const Filters: React.FC<FiltersProps> = ({
   users,
+  clients,
   selectedStatuses,
   selectedPriorities,
   selectedAssignees,
+  selectedClients,
+  searchTaskName,
   dateFrom,
   dateTo,
   onStatusChange,
   onPriorityChange,
   onAssigneeChange,
+  onClientChange,
+  onSearchChange,
   onDateFromChange,
   onDateToChange,
   onClearFilters
@@ -53,6 +63,8 @@ export const Filters: React.FC<FiltersProps> = ({
   const hasActiveFilters = selectedStatuses.length > 0 || 
                           selectedPriorities.length > 0 || 
                           selectedAssignees.length > 0 ||
+                          selectedClients.length > 0 ||
+                          searchTaskName.length > 0 ||
                           dateFrom || dateTo;
 
   return (
@@ -152,16 +164,56 @@ export const Filters: React.FC<FiltersProps> = ({
                   type="date"
                   value={dateFrom}
                   onChange={(e) => onDateFromChange(e.target.value)}
-                  className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
                   placeholder="Desde"
                 />
                 <input
                   type="date"
                   value={dateTo}
                   onChange={(e) => onDateToChange(e.target.value)}
-                  className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
                   placeholder="Hasta"
                 />
+              </div>
+            </div>
+          </div>
+          
+          {/* NUEVA FILA: Búsqueda y Cliente */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 pt-4 border-t border-gray-100">
+            {/* Búsqueda por nombre */}
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-2">Buscar Tarea</label>
+              <div className="relative">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  value={searchTaskName}
+                  onChange={(e) => onSearchChange(e.target.value)}
+                  placeholder="Escribir nombre de tarea..."
+                  className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            
+            {/* Cliente */}
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-2">Cliente</label>
+              <div className="space-y-1 max-h-32 overflow-y-auto border border-gray-200 rounded p-2">
+                {clients.length === 0 ? (
+                  <p className="text-xs text-gray-400 italic">No hay clientes</p>
+                ) : (
+                  clients.map(client => (
+                    <label key={client.id} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-1 rounded">
+                      <input
+                        type="checkbox"
+                        checked={selectedClients.includes(client.id)}
+                        onChange={() => onClientChange(client.id)}
+                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700">{client.name}</span>
+                    </label>
+                  ))
+                )}
               </div>
             </div>
           </div>

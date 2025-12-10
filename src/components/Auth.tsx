@@ -20,13 +20,13 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
     setError('');
 
     try {
-      // Intentar cargar usuarios de Sheets
+      // Cargar usuarios de Sheets
       let users = await sheetsService.getUsers();
       
       // Si no hay usuarios en Sheets, usar MOCK_USERS
       if (users.length === 0) {
         users = MOCK_USERS;
-        console.log('Usando usuarios mock (Sheets vacío)');
+        console.log('⚠️ Usando usuarios mock (Sheets vacío)');
       }
       
       const user = users.find(u => u.email === email && u.password === password);
@@ -38,14 +38,16 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
         setError('Email o contraseña incorrectos');
       }
     } catch (err) {
+      console.error('❌ Error cargando usuarios:', err);
       setError('Error de conexión. Usando datos locales.');
-      console.error(err);
       
       // Fallback a MOCK_USERS
       const user = MOCK_USERS.find(u => u.email === email && u.password === password);
       if (user) {
         const { password, ...userWithoutPassword } = user;
         onLogin(userWithoutPassword as User);
+      } else {
+        setError('Email o contraseña incorrectos');
       }
     } finally {
       setIsLoading(false);

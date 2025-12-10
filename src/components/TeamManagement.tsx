@@ -4,10 +4,17 @@ import { Users, Plus, Edit, Trash2, Save, X, Upload } from 'lucide-react';
 
 interface TeamManagementProps {
   users: User[];
-  onUpdateUsers: (users: User[]) => void;
+  onCreateUser: (user: User) => void;
+  onUpdateUser: (user: User) => void;
+  onDeleteUser: (userId: string) => void;
 }
 
-export const TeamManagement: React.FC<TeamManagementProps> = ({ users, onUpdateUsers }) => {
+export const TeamManagement: React.FC<TeamManagementProps> = ({ 
+  users, 
+  onCreateUser, 
+  onUpdateUser, 
+  onDeleteUser 
+}) => {
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [formData, setFormData] = useState({
@@ -63,26 +70,23 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({ users, onUpdateU
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    let newUsers: User[];
     if (editingUser) {
       // Editar usuario existente
-      newUsers = users.map(u => u.id === editingUser.id ? { ...formData } : u);
+      onUpdateUser({ ...formData });
     } else {
       // Crear nuevo usuario
       if (!formData.avatar) {
         formData.avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(formData.name)}&background=random`;
       }
-      newUsers = [...users, { ...formData }];
+      onCreateUser({ ...formData });
     }
     
-    onUpdateUsers(newUsers);
     handleCloseModal();
   };
 
   const handleDelete = (userId: string) => {
     if (confirm('¿Estás seguro de eliminar este usuario? Esta acción no se puede deshacer.')) {
-      const newUsers = users.filter(u => u.id !== userId);
-      onUpdateUsers(newUsers);
+      onDeleteUser(userId);
     }
   };
 

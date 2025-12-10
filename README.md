@@ -4,7 +4,7 @@ Sistema de seguimiento de tareas para equipos de analítica con integración a G
 
 ## 🚀 Características
 
-✅ Login con usuarios y contraseñas guaradas...
+✅ Login con usuarios y contraseñas  
 ✅ Tablero Kanban con drag & drop  
 ✅ Vista Gantt (cronograma)  
 ✅ Vista por Equipo  

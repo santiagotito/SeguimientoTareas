@@ -4,14 +4,16 @@ import { TaskCard } from './components/TaskCard';
 import { GanttView } from './components/GanttView';
 import { Filters } from './components/Filters';
 import { TeamManagement } from './components/TeamManagement';
-import { User, Task, Status, ViewMode, Priority } from './types';
-import { MOCK_USERS, STATUS_LABELS, STATUS_COLORS } from './constants';
+import { ClientManagement } from './components/ClientManagement';
+import { TableView } from './components/TableView';
+import { User, Task, Status, ViewMode, Priority, Client } from './types';
+import { MOCK_USERS, MOCK_CLIENTS, STATUS_LABELS, STATUS_COLORS } from './constants';
 import { generateDailyReport } from './services/geminiService';
 import { sheetsService } from './services/sheetsService';
 import { 
   LayoutDashboard, 
   CalendarRange, 
-  Users, 
+  Users as UsersIcon, 
   Plus, 
   Sparkles, 
   LogOut,
@@ -19,7 +21,8 @@ import {
   X,
   Edit,
   Trash2,
-  Save
+  Save,
+  Building2
 } from 'lucide-react';
 
 // Helper para obtener fecha local en formato YYYY-MM-DD sin zona horaria
@@ -55,6 +58,7 @@ const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [tasks, setTasks] = useState<Task[]>(INITIAL_TASKS);
   const [users, setUsers] = useState<User[]>(MOCK_USERS);
+  const [clients, setClients] = useState<Client[]>(MOCK_CLIENTS);
   const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.KANBAN);
   const [isGeneratingEmail, setIsGeneratingEmail] = useState(false);
   const [emailDraft, setEmailDraft] = useState<string | null>(null);
@@ -67,28 +71,81 @@ const App: React.FC = () => {
   const [selectedStatuses, setSelectedStatuses] = useState<Status[]>([]);
   const [selectedPriorities, setSelectedPriorities] = useState<Priority[]>([]);
   const [selectedAssignees, setSelectedAssignees] = useState<string[]>([]);
+  const [selectedClients, setSelectedClients] = useState<string[]>([]);
+  const [searchTaskName, setSearchTaskName] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
 
   useEffect(() => {
     loadData();
+    
+    // Polling cada 10 segundos para sincronizar cambios de otros usuarios
+    const interval = setInterval(() => {
+      syncDataFromSheets();
+    }, 10000);
+    
+    return () => clearInterval(interval);
   }, []);
+
+  const syncDataFromSheets = async () => {
+    try {
+      const [loadedTasks, loadedUsers, loadedClients] = await Promise.all([
+        sheetsService.getTasks(),
+        sheetsService.getUsers(),
+        sheetsService.getClients()
+      ]);
+      
+      // Solo actualizar si hay datos nuevos
+      if (loadedTasks.length > 0) {
+        setTasks(prevTasks => {
+          const hasChanges = JSON.stringify(prevTasks) !== JSON.stringify(loadedTasks);
+          return hasChanges ? loadedTasks.map(t => ({
+            ...t,
+            assigneeIds: t.assigneeIds || (t.assigneeId ? [t.assigneeId] : []),
+            clientId: t.clientId || null
+          })) : prevTasks;
+        });
+      }
+      
+      if (loadedUsers.length > 0) {
+        setUsers(prevUsers => {
+          const hasChanges = JSON.stringify(prevUsers) !== JSON.stringify(loadedUsers);
+          return hasChanges ? loadedUsers : prevUsers;
+        });
+      }
+      
+      if (loadedClients.length > 0) {
+        setClients(prevClients => {
+          const hasChanges = JSON.stringify(prevClients) !== JSON.stringify(loadedClients);
+          return hasChanges ? loadedClients : prevClients;
+        });
+      }
+    } catch (error) {
+      console.error('Error syncing data:', error);
+    }
+  };
 
   const loadData = async () => {
     try {
-      const [loadedTasks, loadedUsers] = await Promise.all([
+      const [loadedTasks, loadedUsers, loadedClients] = await Promise.all([
         sheetsService.getTasks(),
-        sheetsService.getUsers()
+        sheetsService.getUsers(),
+        sheetsService.getClients()
       ]);
       
       if (loadedUsers.length > 0) {
         setUsers(loadedUsers);
       }
       
+      if (loadedClients.length > 0) {
+        setClients(loadedClients);
+      }
+      
       if (loadedTasks.length > 0) {
         const tasksWithAssigneeIds = loadedTasks.map(t => ({
           ...t,
-          assigneeIds: t.assigneeIds || (t.assigneeId ? [t.assigneeId] : [])
+          assigneeIds: t.assigneeIds || (t.assigneeId ? [t.assigneeId] : []),
+          clientId: t.clientId || null
         }));
         setTasks(tasksWithAssigneeIds);
       } else {
@@ -108,14 +165,53 @@ const App: React.FC = () => {
     }
   };
 
+  // LEGACY: Guardado completo (mantener por compatibilidad)
   const saveTasks = async (newTasks: Task[]) => {
     setTasks(newTasks);
+    localStorage.setItem('tasks', JSON.stringify(newTasks));
     await sheetsService.saveTasks(newTasks);
   };
 
-  const handleUpdateUsers = async (newUsers: User[]) => {
+  const handleCreateUser = async (user: User) => {
+    const newUsers = [...users, user];
     setUsers(newUsers);
-    await sheetsService.saveUsers(newUsers);
+    localStorage.setItem('users', JSON.stringify(newUsers));
+    await sheetsService.saveUserIncremental('create', user);
+  };
+
+  const handleUpdateUser = async (user: User) => {
+    const newUsers = users.map(u => u.id === user.id ? user : u);
+    setUsers(newUsers);
+    localStorage.setItem('users', JSON.stringify(newUsers));
+    await sheetsService.saveUserIncremental('update', user);
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    const newUsers = users.filter(u => u.id !== userId);
+    setUsers(newUsers);
+    localStorage.setItem('users', JSON.stringify(newUsers));
+    await sheetsService.saveUserIncremental('delete', { id: userId });
+  };
+
+  const handleCreateClient = async (client: Client) => {
+    const newClients = [...clients, client];
+    setClients(newClients);
+    localStorage.setItem('clients', JSON.stringify(newClients));
+    await sheetsService.saveClientIncremental('create', client);
+  };
+
+  const handleUpdateClient = async (client: Client) => {
+    const newClients = clients.map(c => c.id === client.id ? client : c);
+    setClients(newClients);
+    localStorage.setItem('clients', JSON.stringify(newClients));
+    await sheetsService.saveClientIncremental('update', client);
+  };
+
+  const handleDeleteClient = async (clientId: string) => {
+    const newClients = clients.filter(c => c.id !== clientId);
+    setClients(newClients);
+    localStorage.setItem('clients', JSON.stringify(newClients));
+    await sheetsService.saveClientIncremental('delete', { id: clientId });
   };
 
   const handleDragStart = (e: React.DragEvent, id: string) => {
@@ -131,10 +227,14 @@ const App: React.FC = () => {
   const handleDrop = (e: React.DragEvent, status: Status) => {
     e.preventDefault();
     if (draggingId) {
-      const newTasks = tasks.map(t => 
-        t.id === draggingId ? { ...t, status } : t
-      );
-      saveTasks(newTasks);
+      const updatedTask = tasks.find(t => t.id === draggingId);
+      if (updatedTask) {
+        const taskWithNewStatus = { ...updatedTask, status };
+        const newTasks = tasks.map(t => t.id === draggingId ? taskWithNewStatus : t);
+        setTasks(newTasks);
+        localStorage.setItem('tasks', JSON.stringify(newTasks));
+        sheetsService.saveTaskIncremental('update', taskWithNewStatus);
+      }
       setDraggingId(null);
     }
   };
@@ -155,23 +255,36 @@ const App: React.FC = () => {
       priority: taskData.priority || 'medium',
       assigneeId: taskData.assigneeIds?.[0] || null,
       assigneeIds: taskData.assigneeIds || [],
+      clientId: taskData.clientId || null,
       startDate: getLocalDateString(taskData.startDate),
       dueDate: getLocalDateString(taskData.dueDate || new Date(Date.now() + 86400000 * 7)),
       tags: taskData.tags || []
     };
-    saveTasks([...tasks, newTask]);
+    
+    const newTasks = [...tasks, newTask];
+    setTasks(newTasks);
+    localStorage.setItem('tasks', JSON.stringify(newTasks));
+    sheetsService.saveTaskIncremental('create', newTask);
     setShowNewTaskModal(false);
   };
 
   const handleUpdateTask = (taskData: Task) => {
     const newTasks = tasks.map(t => t.id === taskData.id ? taskData : t);
-    saveTasks(newTasks);
+    setTasks(newTasks);
+    localStorage.setItem('tasks', JSON.stringify(newTasks));
+    sheetsService.saveTaskIncremental('update', taskData);
     setEditingTask(null);
   };
 
   const handleDeleteTask = (taskId: string) => {
     if (confirm('¿Eliminar esta tarea?')) {
-      saveTasks(tasks.filter(t => t.id !== taskId));
+      const taskToDelete = tasks.find(t => t.id === taskId);
+      const newTasks = tasks.filter(t => t.id !== taskId);
+      setTasks(newTasks);
+      localStorage.setItem('tasks', JSON.stringify(newTasks));
+      if (taskToDelete) {
+        sheetsService.saveTaskIncremental('delete', taskToDelete);
+      }
     }
   };
 
@@ -194,10 +307,18 @@ const App: React.FC = () => {
     );
   };
 
+  const handleClientFilter = (clientId: string) => {
+    setSelectedClients(prev =>
+      prev.includes(clientId) ? prev.filter(id => id !== clientId) : [...prev, clientId]
+    );
+  };
+
   const handleClearFilters = () => {
     setSelectedStatuses([]);
     setSelectedPriorities([]);
     setSelectedAssignees([]);
+    setSelectedClients([]);
+    setSearchTaskName('');
     setDateFrom('');
     setDateTo('');
   };
@@ -219,6 +340,16 @@ const App: React.FC = () => {
       const hasAssignee = task.assigneeIds?.some(id => selectedAssignees.includes(id)) ||
                          (task.assigneeId && selectedAssignees.includes(task.assigneeId));
       if (!hasAssignee) return false;
+    }
+    
+    // Filtro por cliente
+    if (selectedClients.length > 0 && (!task.clientId || !selectedClients.includes(task.clientId))) {
+      return false;
+    }
+    
+    // Búsqueda por nombre de tarea
+    if (searchTaskName && !task.title.toLowerCase().includes(searchTaskName.toLowerCase())) {
+      return false;
     }
     
     // Filtro por fecha desde (comparación de strings YYYY-MM-DD)
@@ -289,8 +420,15 @@ const App: React.FC = () => {
             onClick={() => setViewMode(ViewMode.TEAM)}
             className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${viewMode === ViewMode.TEAM ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}
           >
-            <Users size={18} />
+            <UsersIcon size={18} />
             Equipo
+          </button>
+          <button 
+            onClick={() => setViewMode(ViewMode.TABLE)}
+            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${viewMode === ViewMode.TABLE ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}
+          >
+            <LayoutDashboard size={18} />
+            Vista de Tabla
           </button>
           
           <div className="pt-2 border-t border-gray-200 mt-2">
@@ -298,8 +436,16 @@ const App: React.FC = () => {
               onClick={() => setViewMode(ViewMode.TEAM_MANAGEMENT)}
               className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${viewMode === ViewMode.TEAM_MANAGEMENT ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}
             >
-              <Users size={18} />
+              <UsersIcon size={18} />
               Gestión de Equipo
+            </button>
+            
+            <button 
+              onClick={() => setViewMode(ViewMode.CLIENT_MANAGEMENT)}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors mt-2 ${viewMode === ViewMode.CLIENT_MANAGEMENT ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}
+            >
+              <Building2 size={18} />
+              Gestión de Clientes
             </button>
           </div>
         </nav>
@@ -346,7 +492,9 @@ const App: React.FC = () => {
               {viewMode === ViewMode.KANBAN && 'Tablero de Tareas'}
               {viewMode === ViewMode.GANTT && 'Cronograma General'}
               {viewMode === ViewMode.TEAM && 'Carga de Trabajo del Equipo'}
+              {viewMode === ViewMode.TABLE && 'Vista de Tabla'}
               {viewMode === ViewMode.TEAM_MANAGEMENT && 'Gestión de Equipo'}
+              {viewMode === ViewMode.CLIENT_MANAGEMENT && 'Gestión de Clientes'}
             </h1>
             <p className="text-sm text-gray-500 mt-1">
               Mostrando {filteredTasks.length} de {tasks.length} tareas
@@ -385,14 +533,19 @@ const App: React.FC = () => {
           
           <Filters
             users={users}
+            clients={clients}
             selectedStatuses={selectedStatuses}
             selectedPriorities={selectedPriorities}
             selectedAssignees={selectedAssignees}
+            selectedClients={selectedClients}
+            searchTaskName={searchTaskName}
             dateFrom={dateFrom}
             dateTo={dateTo}
             onStatusChange={handleStatusFilter}
             onPriorityChange={handlePriorityFilter}
             onAssigneeChange={handleAssigneeFilter}
+            onClientChange={handleClientFilter}
+            onSearchChange={setSearchTaskName}
             onDateFromChange={setDateFrom}
             onDateToChange={setDateTo}
             onClearFilters={handleClearFilters}
@@ -489,7 +642,7 @@ const App: React.FC = () => {
                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden border-dashed border-gray-300">
                    <div className="p-4 border-b border-gray-100 bg-gray-50 flex items-center gap-3">
                      <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">
-                       <Users className="text-gray-500" size={20} />
+                       <UsersIcon className="text-gray-500" size={20} />
                      </div>
                      <h3 className="font-bold text-gray-600">Sin Asignar</h3>
                    </div>
@@ -506,7 +659,30 @@ const App: React.FC = () => {
           )}
 
           {viewMode === ViewMode.TEAM_MANAGEMENT && (
-            <TeamManagement users={users} onUpdateUsers={handleUpdateUsers} />
+            <TeamManagement 
+              users={users} 
+              onCreateUser={handleCreateUser}
+              onUpdateUser={handleUpdateUser}
+              onDeleteUser={handleDeleteUser}
+            />
+          )}
+          
+          {viewMode === ViewMode.CLIENT_MANAGEMENT && (
+            <ClientManagement 
+              clients={clients} 
+              onCreateClient={handleCreateClient}
+              onUpdateClient={handleUpdateClient}
+              onDeleteClient={handleDeleteClient}
+            />
+          )}
+          
+          {viewMode === ViewMode.TABLE && (
+            <TableView 
+              tasks={filteredTasks}
+              users={users}
+              clients={clients}
+              onEditTask={(task) => setEditingTask(task)}
+            />
           )}
 
         </div>
@@ -559,6 +735,7 @@ const App: React.FC = () => {
           <TaskModal
             task={editingTask}
             users={users}
+            clients={clients}
             onSave={editingTask ? handleUpdateTask : handleCreateTask}
             onClose={() => {
               setShowNewTaskModal(false);
@@ -575,15 +752,17 @@ const App: React.FC = () => {
 const TaskModal: React.FC<{
   task?: Task | null;
   users: User[];
+  clients: Client[];
   onSave: (task: any) => void;
   onClose: () => void;
-}> = ({ task, users, onSave, onClose }) => {
+}> = ({ task, users, clients, onSave, onClose }) => {
   const [formData, setFormData] = useState({
     title: task?.title || '',
     description: task?.description || '',
     status: task?.status || 'todo',
     priority: task?.priority || 'medium',
     assigneeIds: task?.assigneeIds || [],
+    clientId: task?.clientId || null,
     startDate: getLocalDateString(task?.startDate),
     dueDate: getLocalDateString(task?.dueDate || new Date(Date.now() + 86400000 * 7)),
     tags: task?.tags?.join(', ') || ''
@@ -656,6 +835,17 @@ const TaskModal: React.FC<{
               <option value="medium">Media</option>
               <option value="high">Alta</option>
               <option value="critical">Crítica</option>
+            </select>
+            
+            <select
+              value={formData.clientId || ''}
+              onChange={(e) => setFormData({...formData, clientId: e.target.value || null})}
+              className="px-4 py-2 border rounded focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">Sin cliente</option>
+              {clients.map(client => (
+                <option key={client.id} value={client.id}>{client.name}</option>
+              ))}
             </select>
           </div>
           

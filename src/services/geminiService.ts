@@ -1,8 +1,7 @@
 import { Task, User } from "../types";
 
 export const generateDailyReport = (tasks: Task[], users: User[]): string => {
-  // 1. Fecha para el encabezado del reporte (formato largo)
-  const reportDateFormatted = new Date().toLocaleDateString('es-ES', { 
+  const todayFormatted = new Date().toLocaleDateString('es-ES', { 
     weekday: 'long', 
     year: 'numeric', 
     month: 'long', 
@@ -12,11 +11,9 @@ export const generateDailyReport = (tasks: Task[], users: User[]): string => {
   // Filtrar tareas pendientes (no "done")
   const pendingTasks = tasks.filter(t => t.status !== 'done');
   
-  // 2. Fecha para comparación (formato YYYY-MM-DD, ISO string)
-  const todayIso = new Date().toISOString().split('T')[0]; 
-  
   // Tareas vencidas (fecha límite pasada - comparación de strings YYYY-MM-DD)
-  const overdueTasks = pendingTasks.filter(t => t.dueDate < todayIso);
+  const todayString = new Date().toISOString().split('T')[0];
+  const overdueTasks = pendingTasks.filter(t => t.dueDate < todayString);
   
   // Ordenar tareas por: prioridad (crítica>alta>media>baja) y fecha (más cercana primero)
   const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
@@ -29,8 +26,7 @@ export const generateDailyReport = (tasks: Task[], users: User[]): string => {
   // Agrupar por responsable
   const tasksByAssignee: Record<string, Task[]> = {};
   sortedTasks.forEach(task => {
-    // Usar 'assigneeIds' si existe, si no 'assigneeId', si no, array vacío
-    const assigneeIds = task.assigneeIds || (task.assigneeId ? [task.assigneeId] : []); 
+    const assigneeIds = task.assigneeIds || (task.assigneeId ? [task.assigneeId] : []);
     if (assigneeIds.length === 0) {
       if (!tasksByAssignee['Sin Asignar']) tasksByAssignee['Sin Asignar'] = [];
       tasksByAssignee['Sin Asignar'].push(task);
@@ -45,7 +41,7 @@ export const generateDailyReport = (tasks: Task[], users: User[]): string => {
 
   // Construir reporte
   let report = `REPORTE DIARIO - TRÁFICO ANALÍTICA RAM\n`;
-  report += `Fecha: ${reportDateFormatted}\n`; // Usamos la nueva variable aquí
+  report += `Fecha: ${todayFormatted}\n`;
   report += `═══════════════════════════════════════════════════════\n\n`;
 
   // Alertas de tareas vencidas
@@ -84,9 +80,7 @@ export const generateDailyReport = (tasks: Task[], users: User[]): string => {
     report += `${'─'.repeat(50)}\n`;
     
     assigneeTasks.forEach((task, index) => {
-      // Nota: Si usas new Date() sin hora, la comparación puede fallar según la zona horaria.
-      // Una forma más segura de comprobar si está vencida es usar todayIso:
-      const isOverdue = task.dueDate < todayIso; 
+      const isOverdue = task.dueDate < todayString;
       const dueDate = new Date(task.dueDate).toLocaleDateString('es-ES');
       const priorityEmoji = {
         critical: '🔥',
