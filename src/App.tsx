@@ -66,6 +66,8 @@ const App: React.FC = () => {
   const [showNewTaskModal, setShowNewTaskModal] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [showCelebration, setShowCelebration] = useState(false);
+  const [completedTaskTitle, setCompletedTaskTitle] = useState('');
 
   // Filtros
   const [selectedStatuses, setSelectedStatuses] = useState<Status[]>([]);
@@ -229,11 +231,21 @@ const App: React.FC = () => {
     if (draggingId) {
       const updatedTask = tasks.find(t => t.id === draggingId);
       if (updatedTask) {
+        // Detectar si se completó (arrastró a done)
+        const wasCompleted = updatedTask.status !== 'done' && status === 'done';
+        
         const taskWithNewStatus = { ...updatedTask, status };
         const newTasks = tasks.map(t => t.id === draggingId ? taskWithNewStatus : t);
         setTasks(newTasks);
         localStorage.setItem('tasks', JSON.stringify(newTasks));
         sheetsService.saveTaskIncremental('update', taskWithNewStatus);
+        
+        // Mostrar celebración si se completó
+        if (wasCompleted) {
+          setCompletedTaskTitle(taskWithNewStatus.title);
+          setShowCelebration(true);
+          setTimeout(() => setShowCelebration(false), 4000);
+        }
       }
       setDraggingId(null);
     }
@@ -269,11 +281,22 @@ const App: React.FC = () => {
   };
 
   const handleUpdateTask = (taskData: Task) => {
+    // Detectar si la tarea pasó a "done"
+    const oldTask = tasks.find(t => t.id === taskData.id);
+    const wasCompleted = oldTask && oldTask.status !== 'done' && taskData.status === 'done';
+    
     const newTasks = tasks.map(t => t.id === taskData.id ? taskData : t);
     setTasks(newTasks);
     localStorage.setItem('tasks', JSON.stringify(newTasks));
     sheetsService.saveTaskIncremental('update', taskData);
     setEditingTask(null);
+    
+    // Mostrar celebración si se completó
+    if (wasCompleted) {
+      setCompletedTaskTitle(taskData.title);
+      setShowCelebration(true);
+      setTimeout(() => setShowCelebration(false), 4000);
+    }
   };
 
   const handleDeleteTask = (taskId: string) => {
@@ -745,6 +768,38 @@ const App: React.FC = () => {
         )}
 
       </main>
+      
+      {/* Modal de Celebración */}
+      {showCelebration && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center transition-opacity duration-300">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+          <div className="relative bg-gradient-to-br from-green-50 to-emerald-50 rounded-3xl shadow-2xl p-8 max-w-md text-center transform transition-all duration-500 scale-100 animate-in">
+            {/* Confetti effect */}
+            <div className="absolute inset-0 overflow-hidden rounded-3xl pointer-events-none">
+              <div className="absolute top-0 left-1/4 w-2 h-2 bg-yellow-400 rounded-full animate-ping"></div>
+              <div className="absolute top-10 right-1/4 w-2 h-2 bg-pink-400 rounded-full animate-ping" style={{ animationDelay: '0.2s' }}></div>
+              <div className="absolute top-5 left-3/4 w-2 h-2 bg-blue-400 rounded-full animate-ping" style={{ animationDelay: '0.4s' }}></div>
+              <div className="absolute top-20 left-1/2 w-2 h-2 bg-purple-400 rounded-full animate-ping" style={{ animationDelay: '0.6s' }}></div>
+            </div>
+            
+            {/* Content */}
+            <div className="text-6xl mb-4 animate-bounce">🎉</div>
+            <h2 className="text-3xl font-bold text-green-800 mb-2">¡Felicidades!</h2>
+            <p className="text-lg text-green-700 mb-3">Tarea completada:</p>
+            <p className="text-xl font-semibold text-gray-800 mb-4 px-4 py-2 bg-white/60 rounded-lg">
+              {completedTaskTitle}
+            </p>
+            <p className="text-sm text-green-600 font-medium">¡Sigue así, excelente trabajo! 💪</p>
+            
+            {/* Animated checkmark */}
+            <div className="mt-6 inline-flex items-center justify-center w-16 h-16 bg-green-500 rounded-full animate-pulse">
+              <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path>
+              </svg>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
