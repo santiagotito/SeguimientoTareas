@@ -77,12 +77,15 @@ const App: React.FC = () => {
   const [searchTaskName, setSearchTaskName] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [showOverdueOnly, setShowOverdueOnly] = useState(false);
 
   // Función para manejar login y auto-seleccionar el usuario en filtros
   const handleLogin = (user: User) => {
     setCurrentUser(user);
     // Auto-seleccionar el usuario logueado en el filtro de responsables
     setSelectedAssignees([user.id]);
+    // Excluir tareas finalizadas por defecto
+    setSelectedStatuses(['todo', 'inprogress', 'review']);
   };
 
   // Función para manejar logout y limpiar filtros
@@ -95,6 +98,7 @@ const App: React.FC = () => {
     setSearchTaskName('');
     setDateFrom('');
     setDateTo('');
+    setShowOverdueOnly(false);
   };
 
   useEffect(() => {
@@ -363,6 +367,7 @@ const App: React.FC = () => {
     setSearchTaskName('');
     setDateFrom('');
     setDateTo('');
+    setShowOverdueOnly(false);
   };
 
   // Aplicar filtros
@@ -402,6 +407,13 @@ const App: React.FC = () => {
     // Filtro por fecha hasta (comparación de strings YYYY-MM-DD)
     if (dateTo && task.dueDate > dateTo) {
       return false;
+    }
+    
+    // Filtro de tareas vencidas
+    if (showOverdueOnly) {
+      const today = new Date().toISOString().split('T')[0];
+      const isOverdue = task.status !== 'done' && task.dueDate < today;
+      if (!isOverdue) return false;
     }
     
     return true;
@@ -583,6 +595,7 @@ const App: React.FC = () => {
             searchTaskName={searchTaskName}
             dateFrom={dateFrom}
             dateTo={dateTo}
+            showOverdueOnly={showOverdueOnly}
             onStatusChange={handleStatusFilter}
             onPriorityChange={handlePriorityFilter}
             onAssigneeChange={handleAssigneeFilter}
@@ -590,11 +603,12 @@ const App: React.FC = () => {
             onSearchChange={setSearchTaskName}
             onDateFromChange={setDateFrom}
             onDateToChange={setDateTo}
+            onOverdueToggle={setShowOverdueOnly}
             onClearFilters={handleClearFilters}
           />
 
           {/* Indicador de filtro personal */}
-          {selectedAssignees.length === 1 && selectedAssignees[0] === currentUser.id && (
+          {selectedAssignees.length === 1 && selectedAssignees[0] === currentUser.id && selectedStatuses.length === 3 && (
             <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="bg-blue-500 rounded-full p-1">
@@ -603,12 +617,15 @@ const App: React.FC = () => {
                   </svg>
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-blue-900">Mostrando solo tus tareas</p>
-                  <p className="text-xs text-blue-700">Para ver tareas de otros, agrega responsables en el filtro</p>
+                  <p className="text-sm font-semibold text-blue-900">Mostrando solo tus tareas activas</p>
+                  <p className="text-xs text-blue-700">Tareas finalizadas ocultas. Usa filtros para ver más</p>
                 </div>
               </div>
               <button
-                onClick={() => setSelectedAssignees([])}
+                onClick={() => {
+                  setSelectedAssignees([]);
+                  setSelectedStatuses([]);
+                }}
                 className="text-blue-600 hover:text-blue-800 text-xs font-medium px-3 py-1 hover:bg-blue-100 rounded transition-colors"
               >
                 Ver todas

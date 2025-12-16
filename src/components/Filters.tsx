@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { User, Status, Priority, Client } from '../types';
-import { Filter, X, ChevronDown, ChevronUp, Search } from 'lucide-react';
+import { Filter, X, ChevronDown, ChevronUp, Search, AlertCircle } from 'lucide-react';
 
 interface FiltersProps {
   users: User[];
@@ -12,6 +12,7 @@ interface FiltersProps {
   searchTaskName: string;
   dateFrom: string;
   dateTo: string;
+  showOverdueOnly: boolean;
   onStatusChange: (status: Status) => void;
   onPriorityChange: (priority: Priority) => void;
   onAssigneeChange: (userId: string) => void;
@@ -19,6 +20,7 @@ interface FiltersProps {
   onSearchChange: (search: string) => void;
   onDateFromChange: (date: string) => void;
   onDateToChange: (date: string) => void;
+  onOverdueToggle: (value: boolean) => void;
   onClearFilters: () => void;
 }
 
@@ -32,6 +34,7 @@ export const Filters: React.FC<FiltersProps> = ({
   searchTaskName,
   dateFrom,
   dateTo,
+  showOverdueOnly,
   onStatusChange,
   onPriorityChange,
   onAssigneeChange,
@@ -39,6 +42,7 @@ export const Filters: React.FC<FiltersProps> = ({
   onSearchChange,
   onDateFromChange,
   onDateToChange,
+  onOverdueToggle,
   onClearFilters
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -65,6 +69,7 @@ export const Filters: React.FC<FiltersProps> = ({
                           selectedAssignees.length > 0 ||
                           selectedClients.length > 0 ||
                           searchTaskName.length > 0 ||
+                          showOverdueOnly ||
                           dateFrom || dateTo;
 
   return (
@@ -216,6 +221,25 @@ export const Filters: React.FC<FiltersProps> = ({
                 )}
               </div>
             </div>
+          </div>
+          
+          {/* FILA EXTRA: Toggle Tareas Vencidas */}
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <label className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 p-3 rounded-lg transition-colors">
+              <input
+                type="checkbox"
+                checked={showOverdueOnly}
+                onChange={(e) => onOverdueToggle(e.target.checked)}
+                className="w-5 h-5 rounded border-gray-300 text-red-600 focus:ring-red-500"
+              />
+              <div className="flex items-center gap-2">
+                <AlertCircle size={18} className="text-red-500" />
+                <div>
+                  <span className="text-sm font-semibold text-gray-800">Solo tareas vencidas</span>
+                  <p className="text-xs text-gray-500">Mostrar únicamente tareas con fecha de vencimiento pasada</p>
+                </div>
+              </div>
+            </label>
           </div>
         </div>
       )}
