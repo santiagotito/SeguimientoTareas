@@ -474,7 +474,7 @@ const App: React.FC = () => {
         <div className="p-6 border-b border-gray-100">
           <div className="flex items-center gap-2 text-[#0078D4] font-bold text-lg">
             <LayoutDashboard />
-            <span>Tráfico Analítica RAM</span>
+            <span>CONTROL DE TAREAS</span>
           </div>
         </div>
 
