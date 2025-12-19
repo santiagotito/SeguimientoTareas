@@ -630,6 +630,33 @@ const App: React.FC = () => {
             onClearFilters={handleClearFilters}
           />
 
+          {/* Indicador de filtro de vencidas */}
+          {showOverdueOnly && (
+            <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="bg-red-500 rounded-full p-1">
+                  <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-red-900">Mostrando solo tareas vencidas</p>
+                  <p className="text-xs text-red-700">
+                    {selectedAssignees.length > 0 
+                      ? `Vencidas de: ${selectedAssignees.map(id => users.find(u => u.id === id)?.name.split(' ')[0]).join(', ')}`
+                      : 'De todos los usuarios'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowOverdueOnly(false)}
+                className="text-red-600 hover:text-red-800 text-xs font-medium px-3 py-1 hover:bg-red-100 rounded transition-colors"
+              >
+                Quitar filtro
+              </button>
+            </div>
+          )}
+
           {/* Indicador de filtro personal */}
           {selectedAssignees.length === 1 && selectedAssignees[0] === currentUser.id && selectedStatuses.length === 3 && (
             <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center justify-between">
