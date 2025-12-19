@@ -581,7 +581,7 @@ const App: React.FC = () => {
              {/* Alerta de tareas vencidas */}
              {(() => {
                const today = new Date().toISOString().split('T')[0];
-               const overdueTasks = tasks.filter(t => 
+               const overdueTasks = filteredTasks.filter(t => 
                  t.status !== 'done' && t.dueDate < today
                );
                if (overdueTasks.length > 0) {
