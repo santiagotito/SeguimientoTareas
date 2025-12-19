@@ -1,6 +1,6 @@
 # 📊 Tráfico Analítica RAM - Documentación Completa
 
-## Índice
+## Índice...
 1. [Descripción General](#descripción-general)
 2. [Características y Funcionalidades](#características-y-funcionalidades)
 3. [Arquitectura del Sistema](#arquitectura-del-sistema)
