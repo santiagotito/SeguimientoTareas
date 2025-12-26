@@ -83,7 +83,7 @@ export const sheetsService = {
   async getTasks() {
     try {
       console.log('🔄 Cargando tareas de Sheets...');
-      const range = 'Tasks!A:L'; // Extendido a L para completedDate
+      const range = 'Tasks!A:N'; // Solo hasta N (parentTaskId)
       const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${range}?key=${API_KEY}`;
       
       if (!API_KEY || !SHEET_ID) {
@@ -125,20 +125,47 @@ export const sheetsService = {
       
       const [headers, ...rows] = data.values;
       console.log(`✅ ${rows.length} tareas cargadas`);
-      return rows.map(row => ({
-        id: row[0] || '',
-        title: row[1] || '',
-        description: row[2] || '',
-        status: row[3] || 'todo',
-        priority: row[4] || 'medium',
-        assigneeId: row[5] || null,
-        startDate: normalizeDate(row[6]),
-        dueDate: normalizeDate(row[7]),
-        tags: row[8] ? row[8].split(',').map((t: string) => t.trim()) : [],
-        assigneeIds: row[9] ? row[9].split(',').map((t: string) => t.trim()) : (row[5] ? [row[5]] : []),
-        clientId: row[10] || null,
-        completedDate: row[11] || null
-      }));
+      return rows.map(row => {
+        // Parsear recurrence
+        let recurrence = undefined;
+        let isRecurring = false;
+        
+        if (row[12]) {
+          try {
+            recurrence = JSON.parse(row[12]);
+            isRecurring = true;
+            
+            // Normalizar days a daysOfWeek si existe
+            if (recurrence && recurrence.days && !recurrence.daysOfWeek) {
+              const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+              recurrence.daysOfWeek = recurrence.days.map((d: number) => dayNames[d]);
+              recurrence.enabled = true; // Asegurar que esté enabled
+              console.log('  🔄 Normalizado recurrence:', recurrence);
+            }
+          } catch (e) {
+            console.warn('Error parseando recurrence:', row[12]);
+          }
+        }
+        
+        return {
+          id: row[0] || '',
+          title: row[1] || '',
+          description: row[2] || '',
+          status: row[3] || 'todo',
+          priority: row[4] || 'medium',
+          assigneeId: row[5] || null,
+          startDate: normalizeDate(row[6]),
+          dueDate: normalizeDate(row[7]),
+          tags: row[8] ? row[8].split(',').map((t: string) => t.trim()) : [],
+          assigneeIds: row[9] ? row[9].split(',').map((t: string) => t.trim()) : (row[5] ? [row[5]] : []),
+          clientId: row[10] || null,
+          completedDate: row[11] || null,
+          isRecurring,
+          recurrence,
+          instances: [], // Siempre inicializar vacío - se generan dinámicamente
+          parentTaskId: row[13] || null
+        };
+      });
     } catch (error) {
       console.error('Error loading tasks from Sheets:', error);
       return [];
@@ -329,10 +356,16 @@ export const sheetsService = {
     }
 
     try {
+      // Preparar task sin instances (Apps Script actual no lo soporta)
+      const taskForSheets = {
+        ...task,
+        instances: undefined // NO enviar instances
+      };
+      
       await fetch(APPS_SCRIPT_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ operation, type: 'task', item: task }),
+        body: JSON.stringify({ operation, type: 'task', item: taskForSheets }),
         mode: 'no-cors'
       });
       console.log(`✅ Tarea ${operation} en Sheets`);

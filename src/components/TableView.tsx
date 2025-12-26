@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
 import { Task, User, Client } from '../types';
-import { Table, Download, Edit, FileSpreadsheet, FileText } from 'lucide-react';
+import { Table, Download, Edit, Trash2, FileSpreadsheet, FileText } from 'lucide-react';
 
 interface TableViewProps {
   tasks: Task[];
   users: User[];
   clients: Client[];
   onEditTask: (task: Task) => void;
+  onDeleteTask?: (task: Task) => void;
 }
 
-export const TableView: React.FC<TableViewProps> = ({ tasks, users, clients, onEditTask }) => {
+export const TableView: React.FC<TableViewProps> = ({ tasks, users, clients, onEditTask, onDeleteTask }) => {
   const [sortField, setSortField] = useState<'client' | 'dueDate' | 'status' | 'title'>('dueDate');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
@@ -247,13 +248,24 @@ export const TableView: React.FC<TableViewProps> = ({ tasks, users, clients, onE
                     {getAssigneeNames(task)}
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <button
-                      onClick={() => onEditTask(task)}
-                      className="inline-flex items-center gap-1 px-3 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-medium rounded transition-colors"
-                    >
-                      <Edit size={14} />
-                      Editar
-                    </button>
+                    <div className="flex gap-2 justify-center">
+                      <button
+                        onClick={() => onEditTask(task)}
+                        className="inline-flex items-center gap-1 px-3 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-medium rounded transition-colors"
+                      >
+                        <Edit size={14} />
+                        Editar
+                      </button>
+                      {onDeleteTask && (
+                        <button
+                          onClick={() => onDeleteTask(task)}
+                          className="inline-flex items-center gap-1 px-3 py-1 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-medium rounded transition-colors"
+                        >
+                          <Trash2 size={14} />
+                          Eliminar
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               );

@@ -13,6 +13,7 @@ interface FiltersProps {
   dateFrom: string;
   dateTo: string;
   showOverdueOnly: boolean;
+  showRecurringOnly: boolean;
   onStatusChange: (status: Status) => void;
   onPriorityChange: (priority: Priority) => void;
   onAssigneeChange: (userId: string) => void;
@@ -21,6 +22,7 @@ interface FiltersProps {
   onDateFromChange: (date: string) => void;
   onDateToChange: (date: string) => void;
   onOverdueToggle: (value: boolean) => void;
+  onRecurringToggle: (value: boolean) => void;
   onClearFilters: () => void;
 }
 
@@ -35,6 +37,7 @@ export const Filters: React.FC<FiltersProps> = ({
   dateFrom,
   dateTo,
   showOverdueOnly,
+  showRecurringOnly,
   onStatusChange,
   onPriorityChange,
   onAssigneeChange,
@@ -43,6 +46,7 @@ export const Filters: React.FC<FiltersProps> = ({
   onDateFromChange,
   onDateToChange,
   onOverdueToggle,
+  onRecurringToggle,
   onClearFilters
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -70,6 +74,7 @@ export const Filters: React.FC<FiltersProps> = ({
                           selectedClients.length > 0 ||
                           searchTaskName.length > 0 ||
                           showOverdueOnly ||
+                          showRecurringOnly ||
                           dateFrom || dateTo;
 
   return (
@@ -237,6 +242,25 @@ export const Filters: React.FC<FiltersProps> = ({
                 <div>
                   <span className="text-sm font-semibold text-gray-800">Solo tareas vencidas</span>
                   <p className="text-xs text-gray-500">Mostrar únicamente tareas con fecha de vencimiento pasada</p>
+                </div>
+              </div>
+            </label>
+
+            {/* Filtro de tareas madre */}
+            <label className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 p-3 rounded-lg transition-colors">
+              <input
+                type="checkbox"
+                checked={showRecurringOnly}
+                onChange={(e) => onRecurringToggle(e.target.checked)}
+                className="w-5 h-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <div className="flex items-center gap-2">
+                <svg className="w-[18px] h-[18px] text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <div>
+                  <span className="text-sm font-semibold text-gray-800">Solo tareas madre</span>
+                  <p className="text-xs text-gray-500">Mostrar únicamente tareas recurrentes (maestras)</p>
                 </div>
               </div>
             </label>

@@ -132,8 +132,14 @@ function handleTaskOperation(sheet, operation, task) {
   let tasksSheet = sheet.getSheetByName('Tasks');
   if (!tasksSheet) {
     tasksSheet = sheet.insertSheet('Tasks');
-    tasksSheet.appendRow(['id', 'title', 'description', 'status', 'priority', 'assigneeId', 'startDate', 'dueDate', 'tags', 'assigneeIds', 'clientId', 'completedDate']);
+    tasksSheet.appendRow(['id', 'title', 'description', 'status', 'priority', 'assigneeId', 'startDate', 'dueDate', 'tags', 'assigneeIds', 'clientId', 'completedDate', 'recurrence', 'parentTaskId']);
   }
+  
+  // Helper para formatear recurrencia
+  const formatRecurrence = (recurrence) => {
+    if (!recurrence || !recurrence.days) return '';
+    return JSON.stringify(recurrence);
+  };
   
   if (operation === 'create') {
     // Verificar si ya existe
@@ -141,7 +147,7 @@ function handleTaskOperation(sheet, operation, task) {
     for (let i = 1; i < data.length; i++) {
       if (data[i][0] === task.id) {
         // Ya existe, actualizar en vez de crear
-        tasksSheet.getRange(i + 1, 1, 1, 12).setValues([[
+        tasksSheet.getRange(i + 1, 1, 1, 14).setValues([[
           task.id,
           task.title || '',
           task.description || '',
@@ -153,7 +159,9 @@ function handleTaskOperation(sheet, operation, task) {
           (task.tags || []).join(','),
           (task.assigneeIds || []).join(','),
           task.clientId || '',
-          task.completedDate || ''
+          task.completedDate || '',
+          formatRecurrence(task.recurrence),
+          task.parentTaskId || ''
         ]]);
         return ContentService.createTextOutput(JSON.stringify({success: true})).setMimeType(ContentService.MimeType.JSON);
       }
@@ -172,14 +180,16 @@ function handleTaskOperation(sheet, operation, task) {
       (task.tags || []).join(','),
       (task.assigneeIds || []).join(','),
       task.clientId || '',
-      task.completedDate || ''
+      task.completedDate || '',
+      formatRecurrence(task.recurrence),
+      task.parentTaskId || ''
     ]);
     
   } else if (operation === 'update') {
     const data = tasksSheet.getDataRange().getValues();
     for (let i = 1; i < data.length; i++) {
       if (data[i][0] === task.id) {
-        tasksSheet.getRange(i + 1, 1, 1, 12).setValues([[
+        tasksSheet.getRange(i + 1, 1, 1, 14).setValues([[
           task.id,
           task.title || '',
           task.description || '',
@@ -191,7 +201,9 @@ function handleTaskOperation(sheet, operation, task) {
           (task.tags || []).join(','),
           (task.assigneeIds || []).join(','),
           task.clientId || '',
-          task.completedDate || ''
+          task.completedDate || '',
+          formatRecurrence(task.recurrence),
+          task.parentTaskId || ''
         ]]);
         return ContentService.createTextOutput(JSON.stringify({success: true})).setMimeType(ContentService.MimeType.JSON);
       }
@@ -282,4 +294,135 @@ function handleUserOperation(sheet, operation, user) {
   }
   
   return ContentService.createTextOutput(JSON.stringify({success: true})).setMimeType(ContentService.MimeType.JSON);
+}
+
+// ============== GENERACIÓN DE TAREAS RECURRENTES (BACKEND) ==============
+
+/**
+ * Función principal para procesar tareas recurrentes.
+ * Se ejecuta mediante un trigger de tiempo (ej. cada día).
+ * Utiliza LockService para evitar ejecuciones simultáneas y duplicados.
+ */
+function processRecurringTasks() {
+  const lock = LockService.getScriptLock();
+  // Esperar máximo 10 minutos para obtener el bloqueo
+  try {
+    lock.waitLock(600000); 
+  } catch (e) {
+    console.log('No se pudo obtener el bloqueo. Otra instancia podría estar ejecutándose.');
+    return;
+  }
+
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet();
+    const tasksSheet = sheet.getSheetByName('Tasks');
+    if (!tasksSheet) {
+      console.log('No se encontró la hoja "Tasks".');
+      return;
+    }
+
+    const allData = tasksSheet.getDataRange().getValues();
+    const headers = allData[0];
+    const tasks = allData.slice(1).map(row => {
+      // Convertir fila en objeto de tarea
+      const task = {};
+      headers.forEach((header, i) => {
+        task[header] = row[i];
+      });
+      return task;
+    });
+
+    const newGeneratedTasks = [];
+    const parentTasks = tasks.filter(t => t.recurrence && t.status !== 'done');
+
+    parentTasks.forEach(task => {
+      let recurrence;
+      try {
+        recurrence = JSON.parse(task.recurrence);
+      } catch (e) {
+        console.log('Error al parsear la recurrencia para la tarea: ' + task.title);
+        return; // Saltar esta tarea si la recurrencia es inválida
+      }
+
+      if (recurrence && recurrence.days && recurrence.days.length > 0) {
+        const startDate = new Date(task.startDate);
+        const endDate = new Date(task.dueDate);
+        
+        // Iterar desde la fecha de inicio hasta la fecha de fin de la recurrencia
+        let currentDate = new Date(startDate);
+        while (currentDate <= endDate) {
+          const dayOfWeek = currentDate.getDay(); // 0=Dom, 1=Lun,...
+
+          if (recurrence.days.includes(dayOfWeek)) {
+            // Formatear la fecha a YYYY-MM-DD
+            const dateStr = Utilities.formatDate(currentDate, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+            
+            // Comprobar si ya existe una instancia para este día
+            const exists = tasks.some(t => t.parentTaskId === task.id && t.dueDate === dateStr) ||
+                           newGeneratedTasks.some(t => t.parentTaskId === task.id && t.dueDate === dateStr);
+
+            if (!exists) {
+              const newId = 't' + new Date().getTime() + '_' + Math.random().toString(36).substr(2, 9);
+              
+              const newTask = [
+                newId,                      // id
+                `${task.title} (${dateStr})`, // title
+                task.description || '',     // description
+                'todo',                     // status
+                task.priority || 'medium',  // priority
+                task.assigneeId || '',      // assigneeId
+                dateStr,                    // startDate
+                dateStr,                    // dueDate
+                task.tags || '',            // tags
+                task.assigneeIds || '',     // assigneeIds
+                task.clientId || '',        // clientId
+                '',                         // completedDate
+                '',                         // recurrence (las instancias no son recurrentes)
+                task.id                     // parentTaskId
+              ];
+              newGeneratedTasks.push(newTask);
+            }
+          }
+          currentDate.setDate(currentDate.getDate() + 1);
+        }
+      }
+    });
+
+    if (newGeneratedTasks.length > 0) {
+      // Añadir todas las nuevas tareas a la hoja de una sola vez
+      tasksSheet.getRange(tasksSheet.getLastRow() + 1, 1, newGeneratedTasks.length, newGeneratedTasks[0].length).setValues(newGeneratedTasks);
+      console.log(`Se generaron ${newGeneratedTasks.length} nuevas tareas recurrentes.`);
+    } else {
+      console.log('No se generaron nuevas tareas recurrentes.');
+    }
+
+  } catch (e) {
+    console.error('Error durante la ejecución de processRecurringTasks: ' + e.toString());
+  } finally {
+    // Liberar el bloqueo para que otras ejecuciones puedan continuar
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Crea un trigger para ejecutar `processRecurringTasks` todos los días.
+ * Ejecutar esta función una vez manualmente para configurar el trigger.
+ */
+function createDailyTrigger() {
+  // Eliminar triggers antiguos para evitar duplicados
+  const triggers = ScriptApp.getProjectTriggers();
+  for (let i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'processRecurringTasks') {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+
+  // Crear un nuevo trigger que se ejecute cada día
+  ScriptApp.newTrigger('processRecurringTasks')
+    .timeBased()
+    .everyDays(1)
+    .atHour(1) // Ejecutar a la 1 AM, por ejemplo
+    .create();
+  
+  console.log('Trigger diario para "processRecurringTasks" creado/actualizado.');
 }

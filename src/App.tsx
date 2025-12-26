@@ -6,7 +6,7 @@ import { Filters } from './components/Filters';
 import { TeamManagement } from './components/TeamManagement';
 import { ClientManagement } from './components/ClientManagement';
 import { TableView } from './components/TableView';
-import { User, Task, Status, ViewMode, Priority, Client } from './types';
+import { User, Task, Status, ViewMode, Priority, Client, DayOfWeek } from './types';
 import { MOCK_USERS, MOCK_CLIENTS, STATUS_LABELS, STATUS_COLORS } from './constants';
 import { generateDailyReport } from './services/geminiService';
 import { sheetsService } from './services/sheetsService';
@@ -25,7 +25,7 @@ import {
   Building2
 } from 'lucide-react';
 
-// Helper para obtener fecha local en formato YYYY-MM-DD sin zona horaria
+// Helper para obtener fecha local en formato YYYY-MM-DD SIEMPRE en UTC-5 (Ecuador)
 const getLocalDateString = (date?: Date | string | null): string => {
   let d: Date;
   
@@ -45,9 +45,13 @@ const getLocalDateString = (date?: Date | string | null): string => {
     d = date;
   }
   
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
+  // Convertir a UTC-5 (Ecuador)
+  const utcTime = d.getTime() + (d.getTimezoneOffset() * 60000); // UTC
+  const ecuadorTime = new Date(utcTime - (5 * 3600000)); // UTC-5
+  
+  const year = ecuadorTime.getUTCFullYear();
+  const month = String(ecuadorTime.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(ecuadorTime.getUTCDate()).padStart(2, '0');
   
   return `${year}-${month}-${day}`;
 };
@@ -78,6 +82,7 @@ const App: React.FC = () => {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [showOverdueOnly, setShowOverdueOnly] = useState(false);
+  const [showRecurringOnly, setShowRecurringOnly] = useState(false);
 
   // Función para manejar login y auto-seleccionar el usuario en filtros
   const handleLogin = (user: User) => {
@@ -109,7 +114,24 @@ const App: React.FC = () => {
       syncDataFromSheets();
     }, 10000);
     
-    return () => clearInterval(interval);
+    // Verificar cada hora si hay que generar nuevas tareas hijas
+    const dailyCheck = setInterval(async () => {
+      console.log('⏰ Verificación horaria de tareas recurrentes');
+      const newChildren = await generateDailyChildTasks(tasks);
+      if (newChildren.length > 0) {
+        const allTasks = [...tasks, ...newChildren];
+        setTasks(allTasks);
+        localStorage.setItem('tasks', JSON.stringify(allTasks));
+        newChildren.forEach(child => {
+          sheetsService.saveTaskIncremental('create', child);
+        });
+      }
+    }, 3600000); // 1 hora
+    
+    return () => {
+      clearInterval(interval);
+      clearInterval(dailyCheck);
+    };
   }, []);
 
   const syncDataFromSheets = async () => {
@@ -172,22 +194,113 @@ const App: React.FC = () => {
           assigneeIds: t.assigneeIds || (t.assigneeId ? [t.assigneeId] : []),
           clientId: t.clientId || null
         }));
-        setTasks(tasksWithAssigneeIds);
+        
+        // Generar tareas hijas para HOY (proceso diario)
+        const newChildTasks = await generateDailyChildTasks(tasksWithAssigneeIds);
+        
+        const allTasks = [...tasksWithAssigneeIds, ...newChildTasks];
+        setTasks(allTasks);
+        
+        // Guardar nuevas tareas hijas en Sheets
+        if (newChildTasks.length > 0) {
+          newChildTasks.forEach(childTask => {
+            sheetsService.saveTaskIncremental('create', childTask);
+          });
+        }
       } else {
         const savedTasks = localStorage.getItem('tasks');
         if (savedTasks) {
-          setTasks(JSON.parse(savedTasks));
+          const parsed = JSON.parse(savedTasks);
+          const newChildTasks = await generateDailyChildTasks(parsed);
+          const allTasks = [...parsed, ...newChildTasks];
+          setTasks(allTasks);
+          localStorage.setItem('tasks', JSON.stringify(allTasks));
         }
       }
     } catch (error) {
       console.error('Error loading data:', error);
       const savedTasks = localStorage.getItem('tasks');
       if (savedTasks) {
-        setTasks(JSON.parse(savedTasks));
+        const parsed = JSON.parse(savedTasks);
+        setTasks(parsed);
       }
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Generar tareas hijas para HOY (proceso diario)
+  const generateDailyChildTasks = async (allTasks: Task[]): Promise<Task[]> => {
+    const today = getLocalDateString(); // Fecha local, no UTC
+    const todayDate = new Date(today);
+    
+    console.log('🌅 Proceso diario: Generando tareas para', today);
+    
+    // Filtrar solo tareas madre activas
+    const motherTasks = allTasks.filter(t => t.isRecurring && !t.parentTaskId);
+    
+    const newChildTasks: Task[] = [];
+    
+    for (const mother of motherTasks) {
+      if (!mother.recurrence) continue;
+      
+      const startDate = new Date(mother.startDate);
+      const endDate = new Date(mother.recurrence.endDate || mother.dueDate);
+      
+      // Verificar si hoy está en el rango
+      if (todayDate < startDate || todayDate > endDate) continue;
+      
+      // Verificar si debe crear tarea hoy
+      const shouldCreate = checkIfShouldCreateTask(today, mother.recurrence);
+      
+      if (!shouldCreate) {
+        console.log(`  ⏭️ "${mother.title}" - Hoy no coincide`);
+        continue;
+      }
+      
+      // Verificar si ya existe tarea hija para hoy
+      const existsToday = allTasks.some(t => 
+        t.parentTaskId === mother.id && 
+        t.startDate === today
+      );
+      
+      if (existsToday) {
+        console.log(`  ℹ️ "${mother.title}" - Ya existe tarea para hoy`);
+        continue;
+      }
+      
+      // Crear tarea hija
+      console.log(`  ✅ Creando tarea hija para "${mother.title}"`);
+      
+      const childTask: Task = {
+        id: `t${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        title: `${mother.title} (${today})`,
+        description: mother.description,
+        status: 'todo',
+        priority: mother.priority,
+        assigneeId: mother.assigneeId,
+        assigneeIds: mother.assigneeIds,
+        clientId: mother.clientId,
+        startDate: today,
+        dueDate: today,
+        tags: mother.tags,
+        completedDate: null,
+        isRecurring: false,
+        recurrence: undefined,
+        instances: [],
+        parentTaskId: mother.id
+      };
+      
+      newChildTasks.push(childTask);
+    }
+    
+    if (newChildTasks.length > 0) {
+      console.log(`✅ ${newChildTasks.length} tareas hijas creadas para hoy`);
+    } else {
+      console.log('ℹ️ No se crearon tareas nuevas hoy');
+    }
+    
+    return newChildTasks;
   };
 
   // LEGACY: Guardado completo (mantener por compatibilidad)
@@ -294,25 +407,176 @@ const App: React.FC = () => {
   };
 
   const handleCreateTask = (taskData: Partial<Task>) => {
-    const newTask: Task = {
+    console.log('📝 Creando tarea con datos:', taskData);
+    
+    // Normalizar recurrence si viene con "days" en lugar de "daysOfWeek"
+    let normalizedRecurrence = taskData.recurrence;
+    if (normalizedRecurrence && (normalizedRecurrence as any).days) {
+      const daysArray = (normalizedRecurrence as any).days;
+      const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+      normalizedRecurrence = {
+        ...normalizedRecurrence,
+        daysOfWeek: daysArray.map((d: number) => dayNames[d]) as any,
+        enabled: true
+      };
+      console.log('🔄 Normalizado days a daysOfWeek:', normalizedRecurrence.daysOfWeek);
+    }
+    
+    if (normalizedRecurrence && normalizedRecurrence.enabled === undefined) {
+      normalizedRecurrence.enabled = true;
+      console.log('🔧 Agregado enabled=true a recurrence');
+    }
+    
+    // Crear tarea MADRE
+    const motherTask: Task = {
       id: `t${Date.now()}`,
       title: taskData.title || '',
       description: taskData.description || '',
-      status: taskData.status || 'todo',
+      status: 'todo', // La madre siempre empieza en todo
       priority: taskData.priority || 'medium',
       assigneeId: taskData.assigneeIds?.[0] || null,
       assigneeIds: taskData.assigneeIds || [],
       clientId: taskData.clientId || null,
       startDate: getLocalDateString(taskData.startDate),
-      dueDate: getLocalDateString(taskData.dueDate || new Date(Date.now() + 86400000 * 7)),
-      tags: taskData.tags || []
+      dueDate: normalizedRecurrence?.endDate || getLocalDateString(taskData.dueDate || new Date(Date.now() + 86400000 * 7)),
+      tags: taskData.tags || [],
+      completedDate: null,
+      isRecurring: taskData.isRecurring || false,
+      recurrence: normalizedRecurrence,
+      instances: [], // No usamos instances
+      parentTaskId: null
     };
     
-    const newTasks = [...tasks, newTask];
-    setTasks(newTasks);
-    localStorage.setItem('tasks', JSON.stringify(newTasks));
-    sheetsService.saveTaskIncremental('create', newTask);
+    console.log('👩 Tarea madre creada:', motherTask);
+    
+    let newTasks = [motherTask];
+    
+    // Si es recurrente Y hoy es un día válido, crear tarea HIJA para HOY
+    if (motherTask.isRecurring && motherTask.recurrence) {
+      const today = getLocalDateString(); // Fecha local
+      const startDate = new Date(motherTask.startDate);
+      const endDate = new Date(motherTask.recurrence.endDate || motherTask.dueDate);
+      const todayDate = new Date(today);
+      
+      console.log('📅 Verificando si crear tarea para hoy:', {
+        today,
+        startDate: startDate.toISOString().split('T')[0],
+        endDate: endDate.toISOString().split('T')[0]
+      });
+      
+      if (todayDate >= startDate && todayDate <= endDate) {
+        const shouldCreateToday = checkIfShouldCreateTask(today, motherTask.recurrence);
+        
+        if (shouldCreateToday) {
+          console.log('✅ Creando tarea hija para HOY');
+          const childTask: Task = {
+            id: `t${Date.now()}_child_${today}`,
+            title: `${motherTask.title} (${today})`,
+            description: motherTask.description,
+            status: 'todo',
+            priority: motherTask.priority,
+            assigneeId: motherTask.assigneeId,
+            assigneeIds: motherTask.assigneeIds,
+            clientId: motherTask.clientId,
+            startDate: today,
+            dueDate: today,
+            tags: motherTask.tags,
+            completedDate: null,
+            isRecurring: false, // Las hijas NO son recurrentes
+            recurrence: undefined,
+            instances: [],
+            parentTaskId: motherTask.id
+          };
+          
+          newTasks.push(childTask);
+          console.log('👶 Tarea hija creada:', childTask);
+        } else {
+          console.log('⏭️ HOY no es un día válido para esta recurrencia');
+        }
+      }
+    }
+    
+    const allTasks = [...tasks, ...newTasks];
+    setTasks(allTasks);
+    localStorage.setItem('tasks', JSON.stringify(allTasks));
+    
+    // Guardar todas en Sheets
+    newTasks.forEach(task => {
+      sheetsService.saveTaskIncremental('create', task);
+    });
+    
     setShowNewTaskModal(false);
+  };
+
+// Función auxiliar para obtener fecha actual en UTC-5 (Ecuador)
+const getTodayEcuador = (): string => {
+  return getLocalDateString();
+};
+
+// Función auxiliar para crear Date object en UTC-5
+const createDateEcuador = (dateString: string): Date => {
+  // Crear fecha en UTC y ajustar a Ecuador
+  const [year, month, day] = dateString.split('-').map(Number);
+  const utcDate = new Date(Date.UTC(year, month - 1, day, 12, 0, 0)); // Mediodía UTC para evitar cambios de día
+  return utcDate;
+};
+
+// Función auxiliar para verificar si se debe crear tarea en una fecha
+  const checkIfShouldCreateTask = (dateString: string, recurrence: any): boolean => {
+    // Parsear fecha manualmente para evitar timezone issues
+    const [year, month, day] = dateString.split('-').map(Number);
+    const date = new Date(year, month - 1, day); // Fecha local
+    
+    const dayOfWeek = date.getDay(); // 0=Dom, 1=Lun, ..., 6=Sab
+    const dayOfMonth = date.getDate(); // 1-31
+    
+    console.log('🔍 checkIfShouldCreateTask:', {
+      fecha: dateString,
+      dayOfWeek,
+      dayOfMonth,
+      frequency: recurrence.frequency,
+      daysOfWeek: recurrence.daysOfWeek,
+      days: recurrence.days
+    });
+    
+    const dayMap: Record<string, number> = {
+      sunday: 0, monday: 1, tuesday: 2, wednesday: 3,
+      thursday: 4, friday: 5, saturday: 6
+    };
+    
+    if (recurrence.frequency === 'daily') {
+      console.log('  ✅ Diaria - siempre true');
+      return true;
+    }
+    
+    if (recurrence.frequency === 'weekly') {
+      // Intentar primero con daysOfWeek
+      let targetDays = recurrence.daysOfWeek?.map((d: string) => dayMap[d]) || [];
+      
+      // Si no hay daysOfWeek pero hay days, usar days directamente
+      if (targetDays.length === 0 && recurrence.days) {
+        targetDays = recurrence.days;
+        console.log('  🔄 Usando days directamente:', targetDays);
+      }
+      
+      console.log('  🎯 Días objetivo:', targetDays);
+      console.log('  📅 Hoy es día:', dayOfWeek);
+      
+      const resultado = targetDays.includes(dayOfWeek);
+      console.log(`  ${resultado ? '✅' : '❌'} Resultado:`, resultado);
+      
+      return resultado;
+    }
+    
+    if (recurrence.frequency === 'monthly') {
+      const targetDay = recurrence.dayOfMonth || 1;
+      const resultado = dayOfMonth === targetDay;
+      console.log(`  ${resultado ? '✅' : '❌'} Mensual - Día objetivo: ${targetDay}, Hoy: ${dayOfMonth}`);
+      return resultado;
+    }
+    
+    console.log('  ❌ Frecuencia no reconocida');
+    return false;
   };
 
   const handleUpdateTask = (taskData: Task) => {
@@ -345,15 +609,54 @@ const App: React.FC = () => {
     }
   };
 
-  const handleDeleteTask = (taskId: string) => {
-    if (confirm('¿Eliminar esta tarea?')) {
-      const taskToDelete = tasks.find(t => t.id === taskId);
-      const newTasks = tasks.filter(t => t.id !== taskId);
+  const handleDeleteTask = (task: Task) => {
+    // Determinar mensaje según tipo de tarea
+    let confirmMessage = '¿Eliminar esta tarea?';
+    
+    if (task.isRecurring && !task.parentTaskId) {
+      // Es tarea MADRE
+      const pendingChildren = tasks.filter(t => 
+        t.parentTaskId === task.id && 
+        t.status !== 'done'
+      );
+      
+      if (pendingChildren.length > 0) {
+        confirmMessage = `Esta es una tarea MADRE con ${pendingChildren.length} tareas hijas pendientes.\n\n¿Eliminar la tarea madre y todas las hijas PENDIENTES?\n(Las finalizadas se mantendrán)`;
+      } else {
+        confirmMessage = '¿Eliminar esta tarea madre?\n(No tiene tareas hijas pendientes)';
+      }
+    } else if (task.parentTaskId) {
+      // Es tarea HIJA
+      confirmMessage = '¿Eliminar esta tarea?\n(La tarea madre se mantendrá)';
+    }
+    
+    if (confirm(confirmMessage)) {
+      let tasksToDelete: Task[] = [task];
+      
+      // Si es madre, agregar hijas pendientes a eliminar
+      if (task.isRecurring && !task.parentTaskId) {
+        const pendingChildren = tasks.filter(t => 
+          t.parentTaskId === task.id && 
+          t.status !== 'done'
+        );
+        tasksToDelete = [task, ...pendingChildren];
+        
+        console.log(`🗑️ Eliminando tarea madre + ${pendingChildren.length} hijas pendientes`);
+      }
+      
+      // Filtrar todas las tareas a eliminar
+      const idsToDelete = tasksToDelete.map(t => t.id);
+      const newTasks = tasks.filter(t => !idsToDelete.includes(t.id));
+      
       setTasks(newTasks);
       localStorage.setItem('tasks', JSON.stringify(newTasks));
-      if (taskToDelete) {
-        sheetsService.saveTaskIncremental('delete', taskToDelete);
-      }
+      
+      // Eliminar de Sheets
+      tasksToDelete.forEach(t => {
+        sheetsService.saveTaskIncremental('delete', t);
+      });
+      
+      console.log(`✅ ${tasksToDelete.length} tarea(s) eliminada(s)`);
     }
   };
 
@@ -391,6 +694,7 @@ const App: React.FC = () => {
     setDateFrom('');
     setDateTo('');
     setShowOverdueOnly(false);
+    setShowRecurringOnly(false);
   };
 
   // Aplicar filtros
@@ -439,21 +743,29 @@ const App: React.FC = () => {
       if (!isOverdue) return false;
     }
     
+    // Filtro de tareas madre
+    if (showRecurringOnly && !task.isRecurring) {
+      return false;
+    }
+    
     return true;
   });
 
+  // Filtrar tareas madre (solo mostrar tareas hijas individuales en Kanban)
+  const displayTasks = filteredTasks.filter(t => !t.isRecurring || t.parentTaskId);
+
   const tasksByStatus = {
-    todo: filteredTasks.filter(t => t.status === 'todo'),
-    inprogress: filteredTasks.filter(t => t.status === 'inprogress'),
-    review: filteredTasks.filter(t => t.status === 'review'),
-    done: filteredTasks.filter(t => t.status === 'done'),
+    todo: displayTasks.filter(t => t.status === 'todo'),
+    inprogress: displayTasks.filter(t => t.status === 'inprogress'),
+    review: displayTasks.filter(t => t.status === 'review'),
+    done: displayTasks.filter(t => t.status === 'done'),
   };
 
   const tasksByAssignee = users.map(user => ({
     user,
-    tasks: filteredTasks.filter(t => t.assigneeIds?.includes(user.id) || t.assigneeId === user.id)
+    tasks: displayTasks.filter(t => t.assigneeIds?.includes(user.id) || t.assigneeId === user.id)
   }));
-  const unassignedTasks = filteredTasks.filter(t => !t.assigneeId && (!t.assigneeIds || t.assigneeIds.length === 0));
+  const unassignedTasks = displayTasks.filter(t => !t.assigneeId && (!t.assigneeIds || t.assigneeIds.length === 0));
 
   if (!currentUser) {
     return <Auth onLogin={handleLogin} />;
@@ -619,6 +931,7 @@ const App: React.FC = () => {
             dateFrom={dateFrom}
             dateTo={dateTo}
             showOverdueOnly={showOverdueOnly}
+            showRecurringOnly={showRecurringOnly}
             onStatusChange={handleStatusFilter}
             onPriorityChange={handlePriorityFilter}
             onAssigneeChange={handleAssigneeFilter}
@@ -627,6 +940,7 @@ const App: React.FC = () => {
             onDateFromChange={setDateFrom}
             onDateToChange={setDateTo}
             onOverdueToggle={setShowOverdueOnly}
+            onRecurringToggle={setShowRecurringOnly}
             onClearFilters={handleClearFilters}
           />
 
@@ -716,7 +1030,7 @@ const App: React.FC = () => {
                             <Edit size={14} className="text-blue-600" />
                           </button>
                           <button
-                            onClick={() => handleDeleteTask(task.id)}
+                            onClick={() => handleDeleteTask(task)}
                             className="bg-white p-1 rounded shadow hover:bg-red-50"
                           >
                             <Trash2 size={14} className="text-red-600" />
@@ -736,7 +1050,12 @@ const App: React.FC = () => {
           )}
 
           {viewMode === ViewMode.GANTT && (
-            <GanttView tasks={filteredTasks} users={users} />
+            <GanttView 
+              tasks={filteredTasks} 
+              users={users} 
+              onEdit={setEditingTask}
+              onDelete={handleDeleteTask}
+            />
           )}
 
           {viewMode === ViewMode.TEAM && (
@@ -814,6 +1133,7 @@ const App: React.FC = () => {
               users={users}
               clients={clients}
               onEditTask={(task) => setEditingTask(task)}
+              onDeleteTask={handleDeleteTask}
             />
           )}
 
@@ -929,19 +1249,53 @@ const TaskModal: React.FC<{
     clientId: task?.clientId || null,
     startDate: getLocalDateString(task?.startDate),
     dueDate: getLocalDateString(task?.dueDate || new Date(Date.now() + 86400000 * 7)),
-    tags: task?.tags?.join(', ') || ''
+    tags: task?.tags?.join(', ') || '',
+    
+    // Recurrencia
+    isRecurring: task?.isRecurring || false,
+    recurrenceFrequency: (task?.recurrence?.frequency as any) || 'weekly',
+    recurrenceDays: task?.recurrence?.daysOfWeek || [],
+    recurrenceDayOfMonth: task?.recurrence?.dayOfMonth || 1,
+    recurrenceEndDate: task?.recurrence?.endDate || ''
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSave({
+    
+    const taskData: any = {
       ...task,
       ...formData,
       assigneeId: formData.assigneeIds[0] || null,
       startDate: getLocalDateString(formData.startDate),
       dueDate: getLocalDateString(formData.dueDate),
       tags: formData.tags.split(',').map(t => t.trim()).filter(Boolean)
-    });
+    };
+    
+    // Agregar recurrencia si está marcada
+    if (formData.isRecurring) {
+      const dayMap: Record<DayOfWeek, number> = {
+        sunday: 0, monday: 1, tuesday: 2, wednesday: 3,
+        thursday: 4, friday: 5, saturday: 6
+      };
+      
+      const daysNumbers = formData.recurrenceDays.map(d => dayMap[d]);
+      
+      taskData.isRecurring = true;
+      taskData.recurrence = {
+        enabled: true,
+        frequency: formData.recurrenceFrequency,
+        days: daysNumbers,
+        daysOfWeek: formData.recurrenceDays,
+        dayOfMonth: formData.recurrenceDayOfMonth, // Para mensual
+        endDate: formData.recurrenceEndDate
+      };
+    } else {
+      taskData.isRecurring = false;
+      taskData.recurrence = null;
+    }
+    
+    console.log('📤 Enviando tarea:', taskData);
+    onSave(taskData);
   };
 
   const toggleAssignee = (userId: string) => {
@@ -952,12 +1306,36 @@ const TaskModal: React.FC<{
         : [...prev.assigneeIds, userId]
     }));
   };
+  
+  const toggleRecurrenceDay = (day: DayOfWeek) => {
+    setFormData(prev => ({
+      ...prev,
+      recurrenceDays: prev.recurrenceDays.includes(day)
+        ? prev.recurrenceDays.filter(d => d !== day)
+        : [...prev.recurrenceDays, day]
+    }));
+  };
+  
+  const dayLabels: Record<DayOfWeek, string> = {
+    monday: 'L',
+    tuesday: 'M',
+    wednesday: 'X',
+    thursday: 'J',
+    friday: 'V',
+    saturday: 'S',
+    sunday: 'D'
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <div className="p-6 border-b sticky top-0 bg-white">
-          <h2 className="text-xl font-bold">{task ? 'Editar Tarea' : 'Nueva Tarea'}</h2>
+        <div className="p-6 border-b sticky top-0 bg-white z-10">
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-bold">{task ? 'Editar Tarea' : 'Nueva Tarea'}</h2>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+              <X size={24} />
+            </button>
+          </div>
         </div>
         
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
@@ -1000,18 +1378,18 @@ const TaskModal: React.FC<{
               <option value="high">Alta</option>
               <option value="critical">Crítica</option>
             </select>
-            
-            <select
-              value={formData.clientId || ''}
-              onChange={(e) => setFormData({...formData, clientId: e.target.value || null})}
-              className="px-4 py-2 border rounded focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">Sin cliente</option>
-              {clients.map(client => (
-                <option key={client.id} value={client.id}>{client.name}</option>
-              ))}
-            </select>
           </div>
+          
+          <select
+            value={formData.clientId || ''}
+            onChange={(e) => setFormData({...formData, clientId: e.target.value || null})}
+            className="w-full px-4 py-2 border rounded focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">Sin cliente</option>
+            {clients.map(client => (
+              <option key={client.id} value={client.id}>{client.name}</option>
+            ))}
+          </select>
           
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1035,22 +1413,34 @@ const TaskModal: React.FC<{
           
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Fecha inicio</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Fecha inicio
+              </label>
               <input
                 type="date"
                 value={formData.startDate}
                 onChange={(e) => setFormData({...formData, startDate: e.target.value})}
                 className="w-full px-4 py-2 border rounded focus:ring-2 focus:ring-blue-500"
+                required
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Fecha vencimiento</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                {formData.isRecurring ? 'Vencimiento tarea individual' : 'Fecha vencimiento'}
+              </label>
               <input
                 type="date"
                 value={formData.dueDate}
                 onChange={(e) => setFormData({...formData, dueDate: e.target.value})}
                 className="w-full px-4 py-2 border rounded focus:ring-2 focus:ring-blue-500"
+                required={!formData.isRecurring}
+                disabled={formData.isRecurring}
               />
+              {formData.isRecurring && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Se usa "Fin Recurrencia" abajo
+                </p>
+              )}
             </div>
           </div>
           
@@ -1062,17 +1452,124 @@ const TaskModal: React.FC<{
             className="w-full px-4 py-2 border rounded focus:ring-2 focus:ring-blue-500"
           />
           
-          <div className="flex justify-end gap-3 pt-4">
+          {/* RECURRENCIA */}
+          <div className="border-t pt-4">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={formData.isRecurring}
+                onChange={(e) => setFormData({...formData, isRecurring: e.target.checked})}
+                className="w-5 h-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+              />
+              <div className="flex items-center gap-2">
+                <svg className="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <span className="font-medium text-gray-900">Tarea Recurrente</span>
+              </div>
+            </label>
+            
+            {formData.isRecurring && (
+              <div className="mt-4 ml-7 space-y-4 p-4 bg-indigo-50 rounded-lg border border-indigo-200">
+                
+                {/* Frecuencia */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Frecuencia</label>
+                  <select
+                    value={formData.recurrenceFrequency}
+                    onChange={(e) => setFormData({...formData, recurrenceFrequency: e.target.value as any})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="daily">Diaria</option>
+                    <option value="weekly">Semanal</option>
+                    <option value="monthly">Mensual</option>
+                  </select>
+                </div>
+                
+                {/* Días de la semana (solo si es semanal) */}
+                {formData.recurrenceFrequency === 'weekly' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Días de la semana
+                    </label>
+                    <div className="flex gap-2 flex-wrap">
+                      {(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as DayOfWeek[]).map(day => (
+                        <button
+                          key={day}
+                          type="button"
+                          onClick={() => toggleRecurrenceDay(day)}
+                          className={`w-10 h-10 rounded-full font-medium text-sm transition-colors ${
+                            formData.recurrenceDays.includes(day)
+                              ? 'bg-indigo-600 text-white'
+                              : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                          }`}
+                        >
+                          {dayLabels[day]}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Día del mes (solo si es mensual) */}
+                {formData.recurrenceFrequency === 'monthly' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Día del mes
+                    </label>
+                    <select
+                      value={formData.recurrenceDayOfMonth}
+                      onChange={(e) => setFormData({...formData, recurrenceDayOfMonth: parseInt(e.target.value)})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                    >
+                      {Array.from({length: 31}, (_, i) => i + 1).map(day => (
+                        <option key={day} value={day}>Día {day}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                
+                {/* Fecha final */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Fin Recurrencia (Última fecha)
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.recurrenceEndDate}
+                    onChange={(e) => setFormData({...formData, recurrenceEndDate: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                    min={formData.startDate}
+                    required={formData.isRecurring}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Se crearán tareas hasta esta fecha
+                  </p>
+                </div>
+                
+                <div className="text-xs text-indigo-700 bg-indigo-100 p-3 rounded">
+                  <strong>💡 Cómo funciona:</strong>
+                  <ul className="mt-1 space-y-1">
+                    <li>• Se guardará la tarea madre (plantilla)</li>
+                    <li>• Si hoy cumple la frecuencia, se crea tarea para hoy</li>
+                    <li>• Cada día se crean automáticamente tareas nuevas</li>
+                  </ul>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          <div className="flex justify-end gap-3 pt-4 border-t">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded"
+              className="px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-[#0078D4] text-white rounded hover:bg-[#006cbd] flex items-center gap-2"
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
             >
               <Save size={18} />
               Guardar

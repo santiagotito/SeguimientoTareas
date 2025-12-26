@@ -1,9 +1,12 @@
 import React from 'react';
 import { Task, User } from '../types';
+import { Edit, Trash2 } from 'lucide-react';
 
 interface GanttViewProps {
   tasks: Task[];
   users: User[];
+  onEdit?: (task: Task) => void;
+  onDelete?: (task: Task) => void;
 }
 
 // Convertir string YYYY-MM-DD a Date sin zona horaria
@@ -26,7 +29,7 @@ const addDaysToDate = (date: Date, days: number) => {
   return result;
 };
 
-export const GanttView: React.FC<GanttViewProps> = ({ tasks, users }) => {
+export const GanttView: React.FC<GanttViewProps> = ({ tasks, users, onEdit, onDelete }) => {
   const sortedTasks = [...tasks].sort((a, b) => a.startDate.localeCompare(b.startDate));
   
   // Calcular rango de fechas
@@ -104,7 +107,7 @@ export const GanttView: React.FC<GanttViewProps> = ({ tasks, users }) => {
         <div className="flex border border-gray-200 rounded-lg overflow-hidden">
           
           {/* COLUMNA FIJA */}
-          <div className="w-[200px] flex-shrink-0 bg-gray-50 border-r border-gray-200">
+          <div className="w-[280px] flex-shrink-0 bg-gray-50 border-r border-gray-200">
             <div className="h-[60px] flex items-center px-4 border-b border-gray-200 font-semibold text-sm text-gray-700 bg-white">
               Tarea
             </div>
@@ -112,11 +115,33 @@ export const GanttView: React.FC<GanttViewProps> = ({ tasks, users }) => {
             {tasks.map(task => {
               const assignee = users.find(u => u.id === task.assigneeId);
               return (
-                <div key={task.id} className="h-[48px] px-4 flex flex-col justify-center border-b border-gray-100 hover:bg-gray-100">
-                  <div className="text-sm font-medium truncate" title={task.title}>{task.title}</div>
-                  <div className="text-xs text-gray-400 flex items-center gap-1">
-                    {assignee && <img src={assignee.avatar} className="w-4 h-4 rounded-full" alt={assignee.name}/>}
-                    {assignee?.name.split(' ')[0]}
+                <div key={task.id} className="h-[48px] px-4 flex items-center justify-between border-b border-gray-100 hover:bg-gray-100 group">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium truncate" title={task.title}>{task.title}</div>
+                    <div className="text-xs text-gray-400 flex items-center gap-1">
+                      {assignee && <img src={assignee.avatar} className="w-4 h-4 rounded-full" alt={assignee.name}/>}
+                      {assignee?.name.split(' ')[0]}
+                    </div>
+                  </div>
+                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {onEdit && (
+                      <button
+                        onClick={() => onEdit(task)}
+                        className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                        title="Editar"
+                      >
+                        <Edit size={14} />
+                      </button>
+                    )}
+                    {onDelete && (
+                      <button
+                        onClick={() => onDelete(task)}
+                        className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
+                        title="Eliminar"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
                   </div>
                 </div>
               );

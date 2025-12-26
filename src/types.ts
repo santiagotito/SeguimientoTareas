@@ -1,5 +1,7 @@
 export type Status = 'todo' | 'inprogress' | 'review' | 'done';
 export type Priority = 'low' | 'medium' | 'high' | 'critical';
+export type RecurrenceFrequency = 'daily' | 'weekly' | 'monthly';
+export type DayOfWeek = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday';
 
 export interface User {
   id: string;
@@ -15,6 +17,21 @@ export interface Client {
   name: string;
 }
 
+export interface RecurrenceConfig {
+  enabled: boolean;
+  frequency: RecurrenceFrequency;
+  daysOfWeek: DayOfWeek[]; // Para weekly
+  dayOfMonth?: number; // Para monthly (1-31)
+  interval: number;
+  endDate: string;
+}
+
+export interface TaskInstance {
+  instanceDate: string;
+  status: Status;
+  completedDate?: string | null;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -22,12 +39,18 @@ export interface Task {
   status: Status;
   priority: Priority;
   assigneeId: string | null;
-  assigneeIds: string[]; // Múltiples responsables
+  assigneeIds: string[];
   clientId: string | null;
   startDate: string;
   dueDate: string;
   tags: string[];
-  completedDate?: string | null; // Fecha cuando se marcó como finalizada
+  completedDate?: string | null;
+  
+  // Recurrencia
+  isRecurring?: boolean;
+  recurrence?: RecurrenceConfig;
+  instances?: TaskInstance[];
+  parentTaskId?: string | null;
 }
 
 export enum ViewMode {
