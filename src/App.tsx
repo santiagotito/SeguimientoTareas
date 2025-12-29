@@ -19,6 +19,7 @@ import {
   LogOut,
   Mail,
   UserCog,
+  Menu,
   X,
   Edit,
   Trash2,
@@ -60,6 +61,7 @@ const getLocalDateString = (date?: Date | string | null): string => {
 const INITIAL_TASKS: Task[] = [];
 
 const App: React.FC = () => {
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [tasks, setTasks] = useState<Task[]>(INITIAL_TASKS);
   const [users, setUsers] = useState<User[]>(MOCK_USERS);
@@ -794,18 +796,40 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50 text-gray-900 font-sans">
+    <div className="flex h-screen bg-gray-50 font-sans">
 
-      <aside className="w-64 bg-white border-r border-gray-200 flex flex-col hidden md:flex z-10">
-        <div className="p-6 border-b border-gray-100">
-          <div className="flex items-center justify-center">
+      {/* Mobile Backdrop */}
+      {isMobileMenuOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
+      {/* Sidebar - Responsive Logic */}
+      <aside className={`
+        fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200 flex flex-col transition-transform duration-300 ease-in-out
+        md:relative md:translate-x-0
+        ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
+      `}>
+        <div className="p-6 border-b border-gray-100 flex justify-between items-center">
+          <div className="flex items-center justify-center flex-1">
             <img src="https://rangle.ec/img/ram.webp" alt="RAM Logo" className="h-10 object-contain" />
           </div>
+          {/* Close button for mobile */}
+          <button
+            onClick={() => setIsMobileMenuOpen(false)}
+            className="md:hidden text-gray-400 hover:text-gray-600"
+          >
+            <X size={20} />
+          </button>
         </div>
 
-        <nav className="flex-1 p-4 space-y-2">
+        <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+          {/* ... Navigation Buttons ... */}
+          {/* (Preserve existing navigation buttons) */}
           <button
-            onClick={() => setViewMode(ViewMode.KANBAN)}
+            onClick={() => { setViewMode(ViewMode.KANBAN); setIsMobileMenuOpen(false); }}
             className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${viewMode === ViewMode.KANBAN ? 'bg-ram-cream text-ram-navy font-bold' : 'text-ram-grey hover:bg-gray-50'}`}
           >
             <LayoutDashboard size={18} />
@@ -813,17 +837,15 @@ const App: React.FC = () => {
           </button>
 
           <button
-            onClick={() => setViewMode(ViewMode.GANTT)}
+            onClick={() => { setViewMode(ViewMode.GANTT); setIsMobileMenuOpen(false); }}
             className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${viewMode === ViewMode.GANTT ? 'bg-ram-cream text-ram-navy font-bold' : 'text-ram-grey hover:bg-gray-50'}`}
           >
             <CalendarRange size={18} />
             Cronograma (Gantt)
           </button>
 
-
-
           <button
-            onClick={() => setViewMode(ViewMode.TABLE)}
+            onClick={() => { setViewMode(ViewMode.TABLE); setIsMobileMenuOpen(false); }}
             className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${viewMode === ViewMode.TABLE ? 'bg-ram-cream text-ram-navy font-bold' : 'text-ram-grey hover:bg-gray-50'}`}
           >
             <LayoutDashboard size={18} />
@@ -832,7 +854,7 @@ const App: React.FC = () => {
 
           <div className="pt-4 mt-4 border-t border-gray-100">
             <button
-              onClick={() => setViewMode(ViewMode.TEAM)} /* Team View Mode for Cards */
+              onClick={() => { setViewMode(ViewMode.TEAM); setIsMobileMenuOpen(false); }}
               className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${viewMode === ViewMode.TEAM ? 'bg-ram-cream text-ram-navy font-bold' : 'text-ram-grey hover:bg-gray-50'}`}
             >
               <UsersIcon size={18} />
@@ -840,7 +862,7 @@ const App: React.FC = () => {
             </button>
 
             <button
-              onClick={() => setViewMode(ViewMode.TEAM_MANAGEMENT)}
+              onClick={() => { setViewMode(ViewMode.TEAM_MANAGEMENT); setIsMobileMenuOpen(false); }}
               className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${viewMode === ViewMode.TEAM_MANAGEMENT ? 'bg-ram-cream text-ram-navy font-bold' : 'text-ram-grey hover:bg-gray-50'}`}
             >
               <UserCog size={18} />
@@ -848,7 +870,7 @@ const App: React.FC = () => {
             </button>
 
             <button
-              onClick={() => setViewMode(ViewMode.CLIENT_MANAGEMENT)}
+              onClick={() => { setViewMode(ViewMode.CLIENT_MANAGEMENT); setIsMobileMenuOpen(false); }}
               className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${viewMode === ViewMode.CLIENT_MANAGEMENT ? 'bg-ram-cream text-ram-navy font-bold' : 'text-ram-grey hover:bg-gray-50'}`}
             >
               <Building2 size={18} />
@@ -857,8 +879,10 @@ const App: React.FC = () => {
           </div>
         </nav>
 
+        {/* ... User Footer ... */}
         <div className="p-4 border-t border-gray-100">
-          <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-4 rounded-xl border border-indigo-100">
+          {/* Report Button */}
+          <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-4 rounded-xl border border-indigo-100 mb-4">
             <h4 className="font-semibold text-indigo-900 text-sm mb-1">Reporte Diario</h4>
             <p className="text-xs text-indigo-700 mb-3">Genera el reporte de tareas pendientes.</p>
             <button
@@ -874,41 +898,52 @@ const App: React.FC = () => {
               Generar Reporte
             </button>
           </div>
-        </div>
 
-        <div className="p-4 flex items-center gap-3 border-t border-gray-100">
-          <img src={currentUser.avatar} alt="User" className="w-9 h-9 rounded-full object-cover" />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-bold text-gray-800 truncate">{currentUser.name}</p>
-            <p className="text-xs text-gray-500 truncate">{currentUser.role}</p>
+          <div className="flex items-center gap-3">
+            <img src={currentUser.avatar} alt="User" className="w-9 h-9 rounded-full object-cover" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-gray-800 truncate">{currentUser.name}</p>
+              <p className="text-xs text-gray-500 truncate">{currentUser.role}</p>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="text-gray-400 hover:text-red-500 p-1"
+            >
+              <LogOut size={16} />
+            </button>
           </div>
-          <button
-            onClick={handleLogout}
-            className="text-gray-400 hover:text-red-500 p-1"
-          >
-            <LogOut size={16} />
-          </button>
         </div>
       </aside>
 
-      <main className="flex-1 flex flex-col h-screen overflow-hidden relative">
+      <main className="flex-1 flex flex-col h-screen overflow-hidden relative w-full">
 
-        <div className="flex justify-between items-center px-8 py-5 bg-white border-b border-gray-200">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800">
-              {viewMode === ViewMode.KANBAN && 'Tablero de Tareas'}
-              {viewMode === ViewMode.GANTT && 'Cronograma General'}
-              {viewMode === ViewMode.TEAM && 'Carga de Trabajo del Equipo'}
-              {viewMode === ViewMode.TABLE && 'Vista de Tabla'}
-              {viewMode === ViewMode.TEAM_MANAGEMENT && 'Gestión de Equipo'}
-              {viewMode === ViewMode.CLIENT_MANAGEMENT && 'Gestión de Clientes'}
-            </h1>
-            <p className="text-sm text-gray-500 mt-1">
-              Mostrando {filteredTasks.length} de {tasks.length} tareas
-            </p>
+        <div className="flex justify-between items-center px-4 md:px-8 py-5 bg-white border-b border-gray-200 sticky top-0 z-30">
+          <div className="flex items-center gap-3">
+            {/* Hamburger Button */}
+            <button
+              onClick={() => setIsMobileMenuOpen(true)}
+              className="md:hidden p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+            >
+              <Menu size={24} />
+            </button>
+
+            <div>
+              <h1 className="text-xl md:text-2xl font-bold text-gray-800 truncate max-w-[200px] md:max-w-none">
+                {viewMode === ViewMode.KANBAN && 'Tablero'}
+                {viewMode === ViewMode.GANTT && 'Cronograma'}
+                {viewMode === ViewMode.TEAM && 'Equipo'}
+                {viewMode === ViewMode.TABLE && 'Tabla'}
+                {viewMode === ViewMode.TEAM_MANAGEMENT && 'Gestión Equipo'}
+                {viewMode === ViewMode.CLIENT_MANAGEMENT && 'Clientes'}
+              </h1>
+              <p className="hidden md:block text-sm text-gray-500 mt-1">
+                Mostrando {filteredTasks.length} de {tasks.length} tareas
+              </p>
+            </div>
           </div>
-          <div className="flex items-center gap-4">
-            {/* Alerta de tareas vencidas */}
+
+          <div className="flex items-center gap-2 md:gap-4">
+            {/* Alerta de tareas vencidas - Compact on mobile */}
             {(() => {
               const today = new Date().toISOString().split('T')[0];
               const overdueTasks = filteredTasks.filter(t =>
@@ -916,22 +951,27 @@ const App: React.FC = () => {
               );
               if (overdueTasks.length > 0) {
                 return (
-                  <div className="bg-red-50 border border-red-200 px-4 py-2 rounded-lg flex items-center gap-2">
+                  <div className="bg-red-50 border border-red-200 px-2 md:px-4 py-1 md:py-2 rounded-lg flex items-center gap-2">
                     <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-                    <span className="text-sm font-medium text-red-700">
+                    <span className="hidden md:inline text-sm font-medium text-red-700">
                       {overdueTasks.length} tarea{overdueTasks.length > 1 ? 's' : ''} vencida{overdueTasks.length > 1 ? 's' : ''}
+                    </span>
+                    <span className="md:hidden text-xs font-bold text-red-700">
+                      {overdueTasks.length}
                     </span>
                   </div>
                 );
               }
               return null;
             })()}
+
             <button
               onClick={() => setShowNewTaskModal(true)}
-              className="bg-[#0078D4] hover:bg-[#006cbd] text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm"
+              className="bg-ram-blue hover:bg-ram-navy text-white px-3 py-2 md:px-4 md:py-2 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm whitespace-nowrap"
             >
               <Plus size={18} />
-              Nueva Tarea
+              <span className="hidden md:inline">Nueva Tarea</span>
+              <span className="md:hidden">Nueva</span>
             </button>
           </div>
         </div>
