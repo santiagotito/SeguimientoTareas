@@ -773,7 +773,7 @@ const App: React.FC = () => {
 
   // Tareas filtradas para vistas de rendimiento (SIN filtro de estado)
   // Esto permite ver el % real de cumplimiento incluyendo tareas finalizadas
-  const performanceFilteredTasks = tasks.filter(task => {
+  const performanceFilteredTasks = !currentUser ? [] : tasks.filter(task => {
     // Filtro de responsable (Analyst auto-filtrado)
     if (currentUser.role === 'Analyst') {
       const isAssigned = task.assigneeIds?.includes(currentUser.id) || task.assigneeId === currentUser.id;
@@ -1335,6 +1335,7 @@ const App: React.FC = () => {
             users={users}
             clients={clients}
             onSave={editingTask ? handleUpdateTask : handleCreateTask}
+            onCreateClient={handleCreateClient}
             onClose={() => {
               setShowNewTaskModal(false);
               setEditingTask(null);
@@ -1384,8 +1385,12 @@ const TaskModal: React.FC<{
   users: User[];
   clients: Client[];
   onSave: (task: any) => void;
+  onCreateClient: (client: Client) => Promise<void>;
   onClose: () => void;
-}> = ({ task, users, clients, onSave, onClose }) => {
+}> = ({ task, users, clients, onSave, onCreateClient, onClose }) => {
+  const [isCreatingClient, setIsCreatingClient] = useState(false);
+  const [newClientName, setNewClientName] = useState('');
+
   const [formData, setFormData] = useState({
     title: task?.title || '',
     description: task?.description || '',
@@ -1407,6 +1412,17 @@ const TaskModal: React.FC<{
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Validate required fields
+    if (!formData.clientId) {
+      alert('Por favor selecciona un cliente');
+      return;
+    }
+
+    if (formData.assigneeIds.length === 0) {
+      alert('Por favor selecciona al menos un responsable');
+      return;
+    }
 
     const taskData: any = {
       ...task,
@@ -1462,6 +1478,23 @@ const TaskModal: React.FC<{
     }));
   };
 
+  const handleCreateNewClient = async () => {
+    if (!newClientName.trim()) {
+      alert('Por favor ingresa un nombre para el cliente');
+      return;
+    }
+
+    const newClient: Client = {
+      id: `client-${Date.now()}`,
+      name: newClientName.trim()
+    };
+
+    await onCreateClient(newClient);
+    setFormData({ ...formData, clientId: newClient.id });
+    setNewClientName('');
+    setIsCreatingClient(false);
+  };
+
   const dayLabels: Record<DayOfWeek, string> = {
     monday: 'L',
     tuesday: 'M',
@@ -1485,61 +1518,103 @@ const TaskModal: React.FC<{
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <input
-            type="text"
-            placeholder="Título"
-            value={formData.title}
-            onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-            className="w-full px-4 py-2 border rounded focus:ring-2 focus:ring-blue-500"
-            required
-          />
-
-          <textarea
-            placeholder="Descripción"
-            value={formData.description}
-            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-            className="w-full px-4 py-2 border rounded focus:ring-2 focus:ring-blue-500"
-            rows={3}
-          />
-
-          <div className="grid grid-cols-2 gap-4">
-            <select
-              value={formData.status}
-              onChange={(e) => setFormData({ ...formData, status: e.target.value as Status })}
-              className="px-4 py-2 border rounded focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="todo">Por Hacer</option>
-              <option value="inprogress">En Progreso</option>
-              <option value="review">En Revisión</option>
-              <option value="done">Finalizado</option>
-            </select>
-
-            <select
-              value={formData.priority}
-              onChange={(e) => setFormData({ ...formData, priority: e.target.value as Priority })}
-              className="px-4 py-2 border rounded focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="low">Baja</option>
-              <option value="medium">Media</option>
-              <option value="high">Alta</option>
-              <option value="critical">Crítica</option>
-            </select>
+          {/* Title - Required */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Título <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              placeholder="Título de la tarea"
+              value={formData.title}
+              onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+              className="w-full px-4 py-2 border rounded focus:ring-2 focus:ring-blue-500"
+              required
+            />
           </div>
 
-          <select
-            value={formData.clientId || ''}
-            onChange={(e) => setFormData({ ...formData, clientId: e.target.value || null })}
-            className="w-full px-4 py-2 border rounded focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">Sin cliente</option>
-            {clients.map(client => (
-              <option key={client.id} value={client.id}>{client.name}</option>
-            ))}
-          </select>
+          {/* Description */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Descripción
+            </label>
+            <textarea
+              placeholder="Descripción de la tarea"
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              className="w-full px-4 py-2 border rounded focus:ring-2 focus:ring-blue-500"
+              rows={3}
+            />
+          </div>
 
+          {/* Client - Required with inline creation */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Cliente <span className="text-red-500">*</span>
+            </label>
+
+            {!isCreatingClient ? (
+              <div className="flex gap-2">
+                <select
+                  value={formData.clientId || ''}
+                  onChange={(e) => setFormData({ ...formData, clientId: e.target.value || null })}
+                  className="flex-1 px-4 py-2 border rounded focus:ring-2 focus:ring-blue-500"
+                  required
+                >
+                  <option value="">Seleccionar cliente...</option>
+                  {clients.map(client => (
+                    <option key={client.id} value={client.id}>{client.name}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setIsCreatingClient(true)}
+                  className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex items-center gap-2 whitespace-nowrap"
+                >
+                  <Plus size={18} />
+                  Nuevo
+                </button>
+              </div>
+            ) : (
+              <div className="border-2 border-green-500 rounded-lg p-3 bg-green-50">
+                <label className="block text-xs font-medium text-gray-700 mb-2">
+                  Nombre del nuevo cliente
+                </label>
+                <input
+                  type="text"
+                  value={newClientName}
+                  onChange={(e) => setNewClientName(e.target.value)}
+                  placeholder="Ej: Empresa XYZ"
+                  className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-green-500 mb-2"
+                  autoFocus
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCreateNewClient}
+                    className="flex-1 px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm font-medium"
+                  >
+                    Guardar Cliente
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsCreatingClient(false);
+                      setNewClientName('');
+                    }}
+                    className="px-3 py-2 border border-gray-300 text-gray-700 rounded hover:bg-gray-50 text-sm"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Assignees - Required */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Responsables ({formData.assigneeIds.length} seleccionados)
+              Responsables <span className="text-red-500">*</span> ({formData.assigneeIds.length} seleccionados)
             </label>
             <div className="border rounded p-3 space-y-2 max-h-40 overflow-y-auto">
               {users.map(user => (
@@ -1557,10 +1632,29 @@ const TaskModal: React.FC<{
             </div>
           </div>
 
+          {/* RECURRING CHECKBOX - Moved here before dates */}
+          <div className="border-t pt-4">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={formData.isRecurring}
+                onChange={(e) => setFormData({ ...formData, isRecurring: e.target.checked })}
+                className="w-5 h-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+              />
+              <div className="flex items-center gap-2">
+                <svg className="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <span className="font-medium text-gray-900">Tarea Recurrente</span>
+              </div>
+            </label>
+          </div>
+
+          {/* Dates */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">
-                Fecha inicio
+                Fecha inicio <span className="text-red-500">*</span>
               </label>
               <input
                 type="date"
@@ -1590,120 +1684,144 @@ const TaskModal: React.FC<{
             </div>
           </div>
 
-          <input
-            type="text"
-            placeholder="Tags (separados por coma)"
-            value={formData.tags}
-            onChange={(e) => setFormData({ ...formData, tags: e.target.value })}
-            className="w-full px-4 py-2 border rounded focus:ring-2 focus:ring-blue-500"
-          />
-
-          {/* RECURRENCIA */}
-          <div className="border-t pt-4">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={formData.isRecurring}
-                onChange={(e) => setFormData({ ...formData, isRecurring: e.target.checked })}
-                className="w-5 h-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-              />
-              <div className="flex items-center gap-2">
-                <svg className="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                <span className="font-medium text-gray-900">Tarea Recurrente</span>
-              </div>
-            </label>
-
-            {formData.isRecurring && (
-              <div className="mt-4 ml-7 space-y-4 p-4 bg-indigo-50 rounded-lg border border-indigo-200">
-
-                {/* Frecuencia */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Frecuencia</label>
-                  <select
-                    value={formData.recurrenceFrequency}
-                    onChange={(e) => setFormData({ ...formData, recurrenceFrequency: e.target.value as any })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="daily">Diaria</option>
-                    <option value="weekly">Semanal</option>
-                    <option value="monthly">Mensual</option>
-                  </select>
-                </div>
-
-                {/* Días de la semana (solo si es semanal) */}
-                {formData.recurrenceFrequency === 'weekly' && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Días de la semana
-                    </label>
-                    <div className="flex gap-2 flex-wrap">
-                      {(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as DayOfWeek[]).map(day => (
-                        <button
-                          key={day}
-                          type="button"
-                          onClick={() => toggleRecurrenceDay(day)}
-                          className={`w-10 h-10 rounded-full font-medium text-sm transition-colors ${formData.recurrenceDays.includes(day)
-                            ? 'bg-indigo-600 text-white'
-                            : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-                            }`}
-                        >
-                          {dayLabels[day]}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Día del mes (solo si es mensual) */}
-                {formData.recurrenceFrequency === 'monthly' && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Día del mes
-                    </label>
-                    <select
-                      value={formData.recurrenceDayOfMonth}
-                      onChange={(e) => setFormData({ ...formData, recurrenceDayOfMonth: parseInt(e.target.value) })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-                    >
-                      {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
-                        <option key={day} value={day}>Día {day}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                {/* Fecha final */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Fin Recurrencia (Última fecha)
-                  </label>
-                  <input
-                    type="date"
-                    value={formData.recurrenceEndDate}
-                    onChange={(e) => setFormData({ ...formData, recurrenceEndDate: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-                    min={formData.startDate}
-                    required={formData.isRecurring}
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Se crearán tareas hasta esta fecha
-                  </p>
-                </div>
-
-                <div className="text-xs text-indigo-700 bg-indigo-100 p-3 rounded">
-                  <strong>💡 Cómo funciona:</strong>
-                  <ul className="mt-1 space-y-1">
-                    <li>• Se guardará la tarea madre (plantilla)</li>
-                    <li>• Si hoy cumple la frecuencia, se crea tarea para hoy</li>
-                    <li>• Cada día se crean automáticamente tareas nuevas</li>
-                  </ul>
-                </div>
-              </div>
-            )}
+          {/* Priority and Status */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Prioridad
+              </label>
+              <select
+                value={formData.priority}
+                onChange={(e) => setFormData({ ...formData, priority: e.target.value as Priority })}
+                className="w-full px-4 py-2 border rounded focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="low">Baja</option>
+                <option value="medium">Media</option>
+                <option value="high">Alta</option>
+                <option value="critical">Crítica</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Estado
+              </label>
+              <select
+                value={formData.status}
+                onChange={(e) => setFormData({ ...formData, status: e.target.value as Status })}
+                className="w-full px-4 py-2 border rounded focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="todo">Por Hacer</option>
+                <option value="inprogress">En Progreso</option>
+                <option value="review">En Revisión</option>
+                <option value="done">Finalizado</option>
+              </select>
+            </div>
           </div>
 
+          {/* Tags */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Tags
+            </label>
+            <input
+              type="text"
+              placeholder="Tags (separados por coma)"
+              value={formData.tags}
+              onChange={(e) => setFormData({ ...formData, tags: e.target.value })}
+              className="w-full px-4 py-2 border rounded focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          {/* RECURRING CONFIG - Only shown if recurring is enabled */}
+          {formData.isRecurring && (
+            <div className="mt-4 ml-7 space-y-4 p-4 bg-indigo-50 rounded-lg border border-indigo-200">
+
+              {/* Frecuencia */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Frecuencia</label>
+                <select
+                  value={formData.recurrenceFrequency}
+                  onChange={(e) => setFormData({ ...formData, recurrenceFrequency: e.target.value as any })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="daily">Diaria</option>
+                  <option value="weekly">Semanal</option>
+                  <option value="monthly">Mensual</option>
+                </select>
+              </div>
+
+              {/* Días de la semana (solo si es semanal) */}
+              {formData.recurrenceFrequency === 'weekly' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Días de la semana
+                  </label>
+                  <div className="flex gap-2 flex-wrap">
+                    {(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as DayOfWeek[]).map(day => (
+                      <button
+                        key={day}
+                        type="button"
+                        onClick={() => toggleRecurrenceDay(day)}
+                        className={`w-10 h-10 rounded-full font-medium text-sm transition-colors ${formData.recurrenceDays.includes(day)
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                          }`}
+                      >
+                        {dayLabels[day]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Día del mes (solo si es mensual) */}
+              {formData.recurrenceFrequency === 'monthly' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Día del mes
+                  </label>
+                  <select
+                    value={formData.recurrenceDayOfMonth}
+                    onChange={(e) => setFormData({ ...formData, recurrenceDayOfMonth: parseInt(e.target.value) })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  >
+                    {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                      <option key={day} value={day}>Día {day}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Fecha final */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Fin Recurrencia (Última fecha)
+                </label>
+                <input
+                  type="date"
+                  value={formData.recurrenceEndDate}
+                  onChange={(e) => setFormData({ ...formData, recurrenceEndDate: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  min={formData.startDate}
+                  required={formData.isRecurring}
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Se crearán tareas hasta esta fecha
+                </p>
+              </div>
+
+              <div className="text-xs text-indigo-700 bg-indigo-100 p-3 rounded">
+                <strong>💡 Cómo funciona:</strong>
+                <ul className="mt-1 space-y-1">
+                  <li>• Se guardará la tarea madre (plantilla)</li>
+                  <li>• Si hoy cumple la frecuencia, se crea tarea para hoy</li>
+                  <li>• Cada día se crean automáticamente tareas nuevas</li>
+                </ul>
+              </div>
+            </div>
+          )}
+
+          {/* Submit buttons */}
           <div className="flex justify-end gap-3 pt-4 border-t">
             <button
               type="button"
