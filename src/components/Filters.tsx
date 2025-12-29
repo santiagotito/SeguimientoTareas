@@ -179,12 +179,14 @@ export const Filters: React.FC<FiltersProps> = ({
 
             {/* Responsable - Dropdown (Locked for Analyst) */}
             <div className="relative">
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Responsable</label>
               {currentUser.role === 'Analyst' ? (
-                <div className="w-full px-3 py-2 bg-gray-100 border border-gray-200 rounded-lg text-sm text-gray-500 cursor-not-allowed flex items-center justify-between">
-                  <span>{currentUser.name} (Tú)</span>
-                  <span className="text-xs bg-gray-200 px-1.5 py-0.5 rounded text-gray-600">Fijo</span>
-                </div>
+                <>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Responsable</label>
+                  <div className="w-full px-3 py-2 bg-gray-100 border border-gray-200 rounded-lg text-sm text-gray-500 cursor-not-allowed flex items-center justify-between">
+                    <span>{currentUser.name} (Tú)</span>
+                    <span className="text-xs bg-gray-200 px-1.5 py-0.5 rounded text-gray-600">Fijo</span>
+                  </div>
+                </>
               ) : (
                 <FilterDropdown
                   label="Responsable"
