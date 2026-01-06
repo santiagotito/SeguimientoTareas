@@ -298,27 +298,6 @@ export const sheetsService = {
   },
   */
 
-  async getClients() {
-    try {
-      const range = 'Clients!A:B';
-      const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${range}?key=${API_KEY}`;
-      
-      const response = await fetch(url);
-      const data = await response.json();
-      
-      if (!data.values || data.values.length <= 1) return [];
-      
-      const [headers, ...rows] = data.values;
-      return rows.map(row => ({
-        id: row[0] || '',
-        name: row[1] || ''
-      }));
-    } catch (error) {
-      console.error('Error loading clients from Sheets:', error);
-      return [];
-    }
-  },
-
   // LEGACY - NO USAR: Guarda TODOS los clientes (causa duplicados)
   // Usar saveClientIncremental en su lugar
   /*

@@ -8,10 +8,13 @@ import { ClientManagement } from './components/ClientManagement';
 import { TableView } from './components/TableView';
 import { ClientPerformance } from './components/ClientPerformance';
 import { UserPerformance } from './components/UserPerformance';
+import { NotificationContainer } from './components/NotificationContainer';
 import { User, Task, Status, ViewMode, Priority, Client, DayOfWeek } from './types';
 import { MOCK_USERS, MOCK_CLIENTS, STATUS_LABELS, STATUS_COLORS } from './constants';
 import { generateDailyReport } from './services/geminiService';
 import { sheetsService } from './services/sheetsService';
+import { useOptimisticData } from './hooks/useOptimisticData';
+import { useNotifications } from './hooks/useNotifications';
 import {
   LayoutDashboard,
   CalendarRange,
@@ -67,9 +70,6 @@ const INITIAL_TASKS: Task[] = [];
 const App: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [tasks, setTasks] = useState<Task[]>(INITIAL_TASKS);
-  const [users, setUsers] = useState<User[]>(MOCK_USERS);
-  const [clients, setClients] = useState<Client[]>(MOCK_CLIENTS);
   const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.KANBAN);
   const [isGeneratingEmail, setIsGeneratingEmail] = useState(false);
   const [emailDraft, setEmailDraft] = useState<string | null>(null);
@@ -79,6 +79,54 @@ const App: React.FC = () => {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [showCelebration, setShowCelebration] = useState(false);
   const [completedTaskTitle, setCompletedTaskTitle] = useState('');
+
+  // Hook de notificaciones para feedback instantáneo
+  const { notifications, addNotification, removeNotification } = useNotifications();
+
+  // Hooks optimistas para tasks, users y clients
+  const tasksOptimistic = useOptimisticData<Task>(INITIAL_TASKS, {
+    syncFn: async (operation, task) => {
+      await sheetsService.saveTaskIncremental(operation, task);
+    },
+    onSyncSuccess: (op) => {
+      console.log(`✅ Tarea ${op.operation} sincronizada`);
+    },
+    onSyncError: (error, op) => {
+      console.error(`❌ Error sincronizando tarea ${op.operation}:`, error);
+      addNotification(`Error al sincronizar tarea: ${error.message}`, 'error');
+    }
+  });
+
+  const usersOptimistic = useOptimisticData<User>(MOCK_USERS, {
+    syncFn: async (operation, user) => {
+      await sheetsService.saveUserIncremental(operation, user);
+    },
+    onSyncSuccess: (op) => {
+      console.log(`✅ Usuario ${op.operation} sincronizado`);
+    },
+    onSyncError: (error, op) => {
+      console.error(`❌ Error sincronizando usuario ${op.operation}:`, error);
+      addNotification(`Error al sincronizar usuario: ${error.message}`, 'error');
+    }
+  });
+
+  const clientsOptimistic = useOptimisticData<Client>(MOCK_CLIENTS, {
+    syncFn: async (operation, client) => {
+      await sheetsService.saveClientIncremental(operation, client);
+    },
+    onSyncSuccess: (op) => {
+      console.log(`✅ Cliente ${op.operation} sincronizado`);
+    },
+    onSyncError: (error, op) => {
+      console.error(`❌ Error sincronizando cliente ${op.operation}:`, error);
+      addNotification(`Error al sincronizar cliente: ${error.message}`, 'error');
+    }
+  });
+
+  // Aliases para facilitar migración
+  const tasks = tasksOptimistic.data;
+  const users = usersOptimistic.data;
+  const clients = clientsOptimistic.data;
 
   // Filtros
   const [selectedStatuses, setSelectedStatuses] = useState<Status[]>([]);
@@ -155,30 +203,31 @@ const App: React.FC = () => {
         sheetsService.getClients()
       ]);
 
-      // Solo actualizar si hay datos nuevos
+      // Solo actualizar si hay datos nuevos (reemplazar todo el estado con datos del servidor)
       if (loadedTasks.length > 0) {
-        setTasks(prevTasks => {
-          const hasChanges = JSON.stringify(prevTasks) !== JSON.stringify(loadedTasks);
-          return hasChanges ? loadedTasks.map(t => ({
+        const hasChanges = JSON.stringify(tasks) !== JSON.stringify(loadedTasks);
+        if (hasChanges) {
+          const normalizedTasks = loadedTasks.map(t => ({
             ...t,
             assigneeIds: t.assigneeIds || (t.assigneeId ? [t.assigneeId] : []),
             clientId: t.clientId || null
-          })) : prevTasks;
-        });
+          }));
+          tasksOptimistic.setAll(normalizedTasks);
+        }
       }
 
       if (loadedUsers.length > 0) {
-        setUsers(prevUsers => {
-          const hasChanges = JSON.stringify(prevUsers) !== JSON.stringify(loadedUsers);
-          return hasChanges ? loadedUsers : prevUsers;
-        });
+        const hasChanges = JSON.stringify(users) !== JSON.stringify(loadedUsers);
+        if (hasChanges) {
+          usersOptimistic.setAll(loadedUsers);
+        }
       }
 
       if (loadedClients.length > 0) {
-        setClients(prevClients => {
-          const hasChanges = JSON.stringify(prevClients) !== JSON.stringify(loadedClients);
-          return hasChanges ? loadedClients : prevClients;
-        });
+        const hasChanges = JSON.stringify(clients) !== JSON.stringify(loadedClients);
+        if (hasChanges) {
+          clientsOptimistic.setAll(loadedClients);
+        }
       }
     } catch (error) {
       console.error('Error syncing data:', error);
@@ -194,15 +243,15 @@ const App: React.FC = () => {
       ]);
 
       if (loadedUsers.length > 0) {
-        setUsers(loadedUsers);
+        usersOptimistic.setAll(loadedUsers);
       }
 
       if (loadedClients.length > 0) {
-        setClients(loadedClients);
+        clientsOptimistic.setAll(loadedClients);
       }
 
       if (loadedTasks.length > 0) {
-        const tasksWithAssigneeIds = loadedTasks.map(t => ({
+        const tasksWithAssigneeIds = loadedTasks.map((t: Task) => ({
           ...t,
           assigneeIds: t.assigneeIds || (t.assigneeId ? [t.assigneeId] : []),
           clientId: t.clientId || null
@@ -212,12 +261,12 @@ const App: React.FC = () => {
         const newChildTasks = await generateDailyChildTasks(tasksWithAssigneeIds);
 
         const allTasks = [...tasksWithAssigneeIds, ...newChildTasks];
-        setTasks(allTasks);
+        tasksOptimistic.setAll(allTasks);
 
-        // Guardar nuevas tareas hijas en Sheets
+        // Guardar nuevas tareas hijas en Sheets (en background)
         if (newChildTasks.length > 0) {
           newChildTasks.forEach(childTask => {
-            sheetsService.saveTaskIncremental('create', childTask);
+            tasksOptimistic.create(childTask);
           });
         }
       } else {
@@ -226,7 +275,7 @@ const App: React.FC = () => {
           const parsed = JSON.parse(savedTasks);
           const newChildTasks = await generateDailyChildTasks(parsed);
           const allTasks = [...parsed, ...newChildTasks];
-          setTasks(allTasks);
+          tasksOptimistic.setAll(allTasks);
           localStorage.setItem('tasks', JSON.stringify(allTasks));
         }
       }
@@ -235,7 +284,7 @@ const App: React.FC = () => {
       const savedTasks = localStorage.getItem('tasks');
       if (savedTasks) {
         const parsed = JSON.parse(savedTasks);
-        setTasks(parsed);
+        tasksOptimistic.setAll(parsed);
       }
     } finally {
       setIsLoading(false);
@@ -324,45 +373,69 @@ const App: React.FC = () => {
   };
 
   const handleCreateUser = async (user: User) => {
-    const newUsers = [...users, user];
-    setUsers(newUsers);
-    localStorage.setItem('users', JSON.stringify(newUsers));
-    await sheetsService.saveUserIncremental('create', user);
+    // 1️⃣ Actualizar INMEDIATAMENTE
+    usersOptimistic.create(user);
+    localStorage.setItem('users', JSON.stringify([...users, user]));
+
+    // 2️⃣ Notificación instantánea
+    addNotification('Usuario creado correctamente', 'success');
+
+    // 3️⃣ Sincronización automática en background (manejada por el hook)
   };
 
   const handleUpdateUser = async (user: User) => {
+    // 1️⃣ Actualizar INMEDIATAMENTE
+    usersOptimistic.update(user);
     const newUsers = users.map(u => u.id === user.id ? user : u);
-    setUsers(newUsers);
     localStorage.setItem('users', JSON.stringify(newUsers));
-    await sheetsService.saveUserIncremental('update', user);
+
+    // 2️⃣ Notificación instantánea
+    addNotification('Usuario actualizado correctamente', 'success');
   };
 
   const handleDeleteUser = async (userId: string) => {
+    const userToDelete = users.find(u => u.id === userId);
+    if (!userToDelete) return;
+
+    // 1️⃣ Eliminar INMEDIATAMENTE
+    usersOptimistic.remove(userToDelete);
     const newUsers = users.filter(u => u.id !== userId);
-    setUsers(newUsers);
     localStorage.setItem('users', JSON.stringify(newUsers));
-    await sheetsService.saveUserIncremental('delete', { id: userId });
+
+    // 2️⃣ Notificación instantánea
+    addNotification('Usuario eliminado correctamente', 'success');
   };
 
   const handleCreateClient = async (client: Client) => {
-    const newClients = [...clients, client];
-    setClients(newClients);
-    localStorage.setItem('clients', JSON.stringify(newClients));
-    await sheetsService.saveClientIncremental('create', client);
+    // 1️⃣ Actualizar INMEDIATAMENTE
+    clientsOptimistic.create(client);
+    localStorage.setItem('clients', JSON.stringify([...clients, client]));
+
+    // 2️⃣ Notificación instantánea
+    addNotification('Cliente creado correctamente', 'success');
   };
 
   const handleUpdateClient = async (client: Client) => {
+    // 1️⃣ Actualizar INMEDIATAMENTE
+    clientsOptimistic.update(client);
     const newClients = clients.map(c => c.id === client.id ? client : c);
-    setClients(newClients);
     localStorage.setItem('clients', JSON.stringify(newClients));
-    await sheetsService.saveClientIncremental('update', client);
+
+    // 2️⃣ Notificación instantánea
+    addNotification('Cliente actualizado correctamente', 'success');
   };
 
   const handleDeleteClient = async (clientId: string) => {
+    const clientToDelete = clients.find(c => c.id === clientId);
+    if (!clientToDelete) return;
+
+    // 1️⃣ Eliminar INMEDIATAMENTE
+    clientsOptimistic.remove(clientToDelete);
     const newClients = clients.filter(c => c.id !== clientId);
-    setClients(newClients);
     localStorage.setItem('clients', JSON.stringify(newClients));
-    await sheetsService.saveClientIncremental('delete', { id: clientId });
+
+    // 2️⃣ Notificación instantánea
+    addNotification('Cliente eliminado correctamente', 'success');
   };
 
   const handleDragStart = (e: React.DragEvent, id: string) => {
@@ -396,17 +469,21 @@ const App: React.FC = () => {
           taskWithNewStatus.completedDate = null;
         }
 
+        // 1️⃣ Actualizar INMEDIATAMENTE
+        tasksOptimistic.update(taskWithNewStatus);
         const newTasks = tasks.map(t => t.id === draggingId ? taskWithNewStatus : t);
-        setTasks(newTasks);
         localStorage.setItem('tasks', JSON.stringify(newTasks));
-        sheetsService.saveTaskIncremental('update', taskWithNewStatus);
 
-        // Mostrar celebración si se completó
+        // 2️⃣ Notificación y celebración
         if (wasCompleted) {
           setCompletedTaskTitle(taskWithNewStatus.title);
           setShowCelebration(true);
           setTimeout(() => setShowCelebration(false), 4000);
+        } else {
+          addNotification(`Tarea movida a ${STATUS_LABELS[status]}`, 'info', 2000);
         }
+
+        // 3️⃣ Sincronización en background (automática)
       }
       setDraggingId(null);
     }
@@ -509,14 +586,22 @@ const App: React.FC = () => {
       }
     }
 
+    // 1️⃣ Agregar INMEDIATAMENTE (optimistic update)
+    newTasks.forEach(task => {
+      tasksOptimistic.create(task);
+    });
+
     const allTasks = [...tasks, ...newTasks];
-    setTasks(allTasks);
     localStorage.setItem('tasks', JSON.stringify(allTasks));
 
-    // Guardar todas en Sheets
-    newTasks.forEach(task => {
-      sheetsService.saveTaskIncremental('create', task);
-    });
+    // 2️⃣ Notificación instantánea
+    if (newTasks.length === 1) {
+      addNotification('Tarea creada correctamente', 'success');
+    } else {
+      addNotification(`${newTasks.length} tareas creadas correctamente`, 'success');
+    }
+
+    // 3️⃣ Sincronización en background (automática por el hook)
 
     setShowNewTaskModal(false);
   };
@@ -608,18 +693,22 @@ const App: React.FC = () => {
       taskData.completedDate = null;
     }
 
+    // 1️⃣ Actualizar INMEDIATAMENTE
+    tasksOptimistic.update(taskData);
     const newTasks = tasks.map(t => t.id === taskData.id ? taskData : t);
-    setTasks(newTasks);
     localStorage.setItem('tasks', JSON.stringify(newTasks));
-    sheetsService.saveTaskIncremental('update', taskData);
     setEditingTask(null);
 
-    // Mostrar celebración si se completó
+    // 2️⃣ Notificación y celebración
     if (wasCompleted) {
       setCompletedTaskTitle(taskData.title);
       setShowCelebration(true);
       setTimeout(() => setShowCelebration(false), 4000);
+    } else {
+      addNotification('Tarea actualizada correctamente', 'success');
     }
+
+    // 3️⃣ Sincronización en background (automática)
   };
 
   const handleDeleteTask = (task: Task) => {
@@ -657,17 +746,23 @@ const App: React.FC = () => {
         console.log(`🗑️ Eliminando tarea madre + ${pendingChildren.length} hijas pendientes`);
       }
 
-      // Filtrar todas las tareas a eliminar
+      // 1️⃣ Eliminar INMEDIATAMENTE
+      tasksToDelete.forEach(t => {
+        tasksOptimistic.remove(t);
+      });
+
       const idsToDelete = tasksToDelete.map(t => t.id);
       const newTasks = tasks.filter(t => !idsToDelete.includes(t.id));
-
-      setTasks(newTasks);
       localStorage.setItem('tasks', JSON.stringify(newTasks));
 
-      // Eliminar de Sheets
-      tasksToDelete.forEach(t => {
-        sheetsService.saveTaskIncremental('delete', t);
-      });
+      // 2️⃣ Notificación instantánea
+      if (tasksToDelete.length === 1) {
+        addNotification('Tarea eliminada correctamente', 'success');
+      } else {
+        addNotification(`${tasksToDelete.length} tareas eliminadas correctamente`, 'success');
+      }
+
+      // 3️⃣ Sincronización en background (automática)
 
       console.log(`✅ ${tasksToDelete.length} tarea(s) eliminada(s)`);
     }
@@ -1376,6 +1471,12 @@ const App: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Notificaciones - Feedback instantáneo */}
+      <NotificationContainer
+        notifications={notifications}
+        onRemove={removeNotification}
+      />
     </div>
   );
 };
