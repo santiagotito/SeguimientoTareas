@@ -866,49 +866,23 @@ const App: React.FC = () => {
     return true;
   });
 
-  // Tareas filtradas para vistas de rendimiento (SIN filtro de estado)
-  // Esto permite ver el % real de cumplimiento incluyendo tareas finalizadas
-  const performanceFilteredTasks = !currentUser ? [] : tasks.filter(task => {
-    // Filtro de responsable (Analyst auto-filtrado)
-    if (currentUser.role === 'Analyst') {
+
+
+  // Tareas que definen el "universo" actual (para el denominador del contador)
+  const contextTasks = tasks.filter(task => {
+    // 1. Restricción por Rol (Analista solo ve lo suyo)
+    if (currentUser?.role === 'Analyst') {
       const isAssigned = task.assigneeIds?.includes(currentUser.id) || task.assigneeId === currentUser.id;
       if (!isAssigned) return false;
     } else if (selectedAssignees.length > 0) {
+      // 2. Filtro de responsables (Admin)
       const hasAssignee = task.assigneeIds?.some(id => selectedAssignees.includes(id)) ||
         (task.assigneeId && selectedAssignees.includes(task.assigneeId));
       if (!hasAssignee) return false;
     }
 
-    // Filtro de prioridad
-    if (selectedPriorities.length > 0 && !selectedPriorities.includes(task.priority)) {
-      return false;
-    }
-
-    // Filtro de cliente
-    if (selectedClients.length > 0) {
-      if (!task.clientId || !selectedClients.includes(task.clientId)) {
-        return false;
-      }
-    }
-
-    // Filtro de búsqueda
-    if (searchTaskName && !task.title.toLowerCase().includes(searchTaskName.toLowerCase())) {
-      return false;
-    }
-
-    // Filtro de rango de fechas
-    if (dateFrom && task.dueDate < dateFrom) return false;
-    if (dateTo && task.dueDate > dateTo) return false;
-
-    // Filtro de vencidas
-    if (showOverdueOnly) {
-      const today = new Date().toISOString().split('T')[0];
-      const isOverdue = task.status !== 'done' && task.dueDate < today;
-      if (!isOverdue) return false;
-    }
-
-    // Filtro de tareas madre
-    if (showRecurringOnly && !task.isRecurring) {
+    // 3. Filtro por cliente
+    if (selectedClients.length > 0 && (!task.clientId || !selectedClients.includes(task.clientId))) {
       return false;
     }
 
@@ -1103,7 +1077,7 @@ const App: React.FC = () => {
                 {viewMode === ViewMode.USER_PERFORMANCE && 'Rendimiento Usuarios'}
               </h1>
               <p className="hidden md:block text-sm text-gray-500 mt-1">
-                Mostrando {filteredTasks.length} de {tasks.length} tareas
+                Mostrando {filteredTasks.length} de {contextTasks.length} tareas
               </p>
             </div>
           </div>
@@ -1364,7 +1338,7 @@ const App: React.FC = () => {
 
           {viewMode === ViewMode.CLIENT_PERFORMANCE && (
             <ClientPerformance
-              tasks={performanceFilteredTasks}
+              tasks={filteredTasks}
               clients={clients}
               currentUser={currentUser!}
             />
@@ -1372,7 +1346,7 @@ const App: React.FC = () => {
 
           {viewMode === ViewMode.USER_PERFORMANCE && (
             <UserPerformance
-              tasks={performanceFilteredTasks}
+              tasks={filteredTasks}
               users={users}
               currentUser={currentUser!}
             />
