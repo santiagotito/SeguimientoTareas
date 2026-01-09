@@ -8,6 +8,7 @@ import { ClientManagement } from './components/ClientManagement';
 import { TableView } from './components/TableView';
 import { ClientPerformance } from './components/ClientPerformance';
 import { UserPerformance } from './components/UserPerformance';
+import { Dashboard } from './components/Dashboard';
 import { NotificationContainer } from './components/NotificationContainer';
 import { User, Task, Status, ViewMode, Priority, Client, DayOfWeek } from './types';
 import { MOCK_USERS, MOCK_CLIENTS, STATUS_LABELS, STATUS_COLORS } from './constants';
@@ -1086,6 +1087,14 @@ const App: React.FC = () => {
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
           {/* Vistas principales */}
           <button
+            onClick={() => { setViewMode(ViewMode.DASHBOARD); setIsMobileMenuOpen(false); }}
+            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${viewMode === ViewMode.DASHBOARD ? 'bg-ram-cream text-ram-navy font-bold' : 'text-ram-grey hover:bg-gray-50'}`}
+          >
+            <BarChart3 size={18} />
+            Dashboard General
+          </button>
+
+          <button
             onClick={() => { setViewMode(ViewMode.KANBAN); setIsMobileMenuOpen(false); }}
             className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${viewMode === ViewMode.KANBAN ? 'bg-ram-cream text-ram-navy font-bold' : 'text-ram-grey hover:bg-gray-50'}`}
           >
@@ -1222,6 +1231,7 @@ const App: React.FC = () => {
 
             <div>
               <h1 className="text-xl md:text-2xl font-bold text-gray-800 truncate max-w-[200px] md:max-w-none">
+                {viewMode === ViewMode.DASHBOARD && 'Dashboard General'}
                 {viewMode === ViewMode.KANBAN && 'Tablero'}
                 {viewMode === ViewMode.GANTT && 'Cronograma'}
                 {viewMode === ViewMode.TEAM && 'Equipo'}
@@ -1299,6 +1309,14 @@ const App: React.FC = () => {
             onRecurringToggle={setShowRecurringOnly}
             onClearFilters={handleClearFilters}
           />
+
+          {viewMode === ViewMode.DASHBOARD && (
+            <Dashboard
+              tasks={filteredTasks}
+              contextTasks={performanceTasks}
+              users={users}
+            />
+          )}
 
           {/* Indicador de filtro de vencidas */}
           {showOverdueOnly && (
