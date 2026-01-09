@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Task, User, Status, Priority } from '../types';
 import {
     BarChart3,
@@ -8,7 +8,9 @@ import {
     Briefcase,
     TrendingUp,
     User as UserIcon,
-    Layout
+    Layout,
+    X,
+    ExternalLink
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -17,60 +19,80 @@ interface DashboardProps {
     users: User[];
 }
 
+interface DrillDownState {
+    title: string;
+    tasks: Task[];
+    color: string;
+}
+
+const STATUS_LABELS: Record<string, string> = {
+    todo: 'Por Hacer',
+    inprogress: 'En Progreso',
+    review: 'En Revisión',
+    done: 'Finalizado'
+};
+
 export const Dashboard: React.FC<DashboardProps> = ({ tasks, contextTasks, users }) => {
+    const [drillDown, setDrillDown] = useState<DrillDownState | null>(null);
+
     // --- KPI Calculation (Completion Rate uses contextTasks) ---
     const stats = useMemo(() => {
         // Pending/Critical/High based on CURRENT VIEW (tasks)
         const totalVisible = tasks.length;
-        const pending = tasks.filter(t => t.status !== 'done').length;
-        const critical = tasks.filter(t => t.priority === 'critical' && t.status !== 'done').length;
-        const high = tasks.filter(t => t.priority === 'high' && t.status !== 'done').length;
+        const pending = tasks.filter(t => t.status !== 'done');
+        const critical = tasks.filter(t => t.priority === 'critical' && t.status !== 'done');
+        const high = tasks.filter(t => t.priority === 'high' && t.status !== 'done');
+        const activeWorkload = tasks.filter(t => t.status !== 'done');
 
         // Completion Rate based on CONTEXT (contextTasks - ignoring status filter)
         const contextTotal = contextTasks.length;
-        const contextCompleted = contextTasks.filter(t => t.status === 'done').length;
-        const completionRate = contextTotal > 0 ? Math.round((contextCompleted / contextTotal) * 100) : 0;
+        const contextCompleted = contextTasks.filter(t => t.status === 'done');
+        const completionRate = contextTotal > 0 ? Math.round((contextCompleted.length / contextTotal) * 100) : 0;
 
         return {
             total: totalVisible,
-            pending,
-            critical,
-            high,
-            completionRate
+            pendingCount: pending.length,
+            criticalCount: critical.length,
+            highCount: high.length,
+            completionRate,
+            // Raw arrays for drill-down
+            pendingTasks: pending,
+            criticalTasks: critical,
+            highTasks: high,
+            activeTasks: activeWorkload,
+            completedContextTasks: contextCompleted // To show what "Completed" means in context
         };
     }, [tasks, contextTasks]);
 
     // --- Breakdown by Priority (Active Tasks) ---
     const priorityBreakdown = useMemo(() => {
         const active = tasks.filter(t => t.status !== 'done');
-        const counts = {
-            critical: active.filter(t => t.priority === 'critical').length,
-            high: active.filter(t => t.priority === 'high').length,
-            medium: active.filter(t => t.priority === 'medium').length,
-            low: active.filter(t => t.priority === 'low').length,
+        return {
+            critical: active.filter(t => t.priority === 'critical'),
+            high: active.filter(t => t.priority === 'high'),
+            medium: active.filter(t => t.priority === 'medium'),
+            low: active.filter(t => t.priority === 'low'),
         };
-        return counts;
     }, [tasks]);
 
     // --- Breakdown by Status ---
     const statusBreakdown = useMemo(() => {
-        const counts = {
-            todo: tasks.filter(t => t.status === 'todo').length,
-            inprogress: tasks.filter(t => t.status === 'inprogress').length,
-            review: tasks.filter(t => t.status === 'review').length,
-            done: tasks.filter(t => t.status === 'done').length,
+        return {
+            todo: tasks.filter(t => t.status === 'todo'),
+            inprogress: tasks.filter(t => t.status === 'inprogress'),
+            review: tasks.filter(t => t.status === 'review'),
+            done: tasks.filter(t => t.status === 'done'),
         };
-        return counts;
     }, [tasks]);
 
     // --- Top Users by Workload (Pending Tasks) ---
     const userWorkload = useMemo(() => {
         const activeTasks = tasks.filter(t => t.status !== 'done');
         const workload = users.map(user => {
-            const count = activeTasks.filter(t =>
+            const userTasks = activeTasks.filter(t =>
                 t.assigneeIds?.includes(user.id) || t.assigneeId === user.id
-            ).length;
-            return { user, count };
+            );
+            return { user, count: userTasks.length, tasks: userTasks };
         });
         // Sort by count desc and take top 5
         return workload.sort((a, b) => b.count - a.count).slice(0, 5);
@@ -79,8 +101,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ tasks, contextTasks, users
     // --- Helper for progress bars ---
     const maxWorkload = Math.max(...userWorkload.map(w => w.count), 1);
 
+    const handleDrillDown = (title: string, tasks: Task[], color: string) => {
+        setDrillDown({ title, tasks, color });
+    };
+
     return (
-        <div className="h-full overflow-y-auto p-2">
+        <div className="h-full overflow-y-auto p-2 relative">
             <div className="max-w-[1600px] mx-auto space-y-6 pb-12">
 
                 {/* Header Section */}
@@ -89,16 +115,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ tasks, contextTasks, users
                         <Layout className="text-ram-blue" />
                         Dashboard General
                     </h2>
-                    <p className="text-gray-500 mt-1">Visión general del estado del proyecto basada en los filtros actuales.</p>
+                    <p className="text-gray-500 mt-1">Visión general del estado del proyecto. Haz clic en las tarjetas para ver detalles.</p>
                 </div>
 
                 {/* KPIs Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     {/* Card 1: Total Pending */}
-                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between group hover:shadow-md transition-all">
+                    <div
+                        onClick={() => handleDrillDown('Tareas Pendientes', stats.pendingTasks, 'border-blue-500')}
+                        className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between group hover:shadow-md transition-all cursor-pointer hover:border-blue-200"
+                    >
                         <div>
                             <p className="text-gray-500 text-sm font-medium mb-1">Tareas Pendientes</p>
-                            <h3 className="text-3xl font-bold text-gray-800">{stats.pending}</h3>
+                            <h3 className="text-3xl font-bold text-gray-800">{stats.pendingCount}</h3>
                             <p className="text-xs text-gray-400 mt-1">De {stats.total} tareas visibles</p>
                         </div>
                         <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
@@ -107,13 +136,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ tasks, contextTasks, users
                     </div>
 
                     {/* Card 2: Critical & High */}
-                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between group hover:shadow-md transition-all">
+                    <div
+                        onClick={() => handleDrillDown('Alta Prioridad / Críticas', [...stats.criticalTasks, ...stats.highTasks], 'border-red-500')}
+                        className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between group hover:shadow-md transition-all cursor-pointer hover:border-red-200"
+                    >
                         <div>
                             <p className="text-gray-500 text-sm font-medium mb-1">Prioridad Alta/Crítica</p>
                             <div className="flex items-baseline gap-2">
-                                <h3 className="text-3xl font-bold text-gray-800">{stats.critical + stats.high}</h3>
+                                <h3 className="text-3xl font-bold text-gray-800">{stats.criticalCount + stats.highCount}</h3>
                                 <span className="text-xs font-bold text-red-500 bg-red-50 px-2 py-0.5 rounded-full">
-                                    {stats.critical} Críticas
+                                    {stats.criticalCount} Críticas
                                 </span>
                             </div>
                             <p className="text-xs text-gray-400 mt-1">Requieren atención inmediata</p>
@@ -124,7 +156,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ tasks, contextTasks, users
                     </div>
 
                     {/* Card 3: Completion Rate */}
-                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between group hover:shadow-md transition-all">
+                    <div
+                        onClick={() => handleDrillDown('Tareas Finalizadas (Total Contexto)', stats.completedContextTasks, 'border-green-500')}
+                        className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between group hover:shadow-md transition-all cursor-pointer hover:border-green-200"
+                    >
                         <div>
                             <p className="text-gray-500 text-sm font-medium mb-1">Tasa de Finalización</p>
                             <h3 className="text-3xl font-bold text-gray-800">{stats.completionRate}%</h3>
@@ -141,10 +176,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ tasks, contextTasks, users
                     </div>
 
                     {/* Card 4: Total Active Workload */}
-                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between group hover:shadow-md transition-all">
+                    <div
+                        onClick={() => handleDrillDown('Carga de Trabajo Activa', stats.activeTasks, 'border-purple-500')}
+                        className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between group hover:shadow-md transition-all cursor-pointer hover:border-purple-200"
+                    >
                         <div>
                             <p className="text-gray-500 text-sm font-medium mb-1">Carga de Trabajo Activa</p>
-                            <h3 className="text-3xl font-bold text-gray-800">{stats.pending}</h3>
+                            <h3 className="text-3xl font-bold text-gray-800">{stats.pendingCount}</h3>
                             <p className="text-xs text-gray-400 mt-1">Tareas en progreso o por hacer</p>
                         </div>
                         <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
@@ -164,13 +202,37 @@ export const Dashboard: React.FC<DashboardProps> = ({ tasks, contextTasks, users
                         </h3>
 
                         <div className="space-y-4">
-                            <PriorityBar label="Crítica" count={priorityBreakdown.critical} color="bg-red-500" total={stats.pending} />
-                            <PriorityBar label="Alta" count={priorityBreakdown.high} color="bg-orange-500" total={stats.pending} />
-                            <PriorityBar label="Media" count={priorityBreakdown.medium} color="bg-blue-500" total={stats.pending} />
-                            <PriorityBar label="Baja" count={priorityBreakdown.low} color="bg-green-500" total={stats.pending} />
+                            <PriorityBar
+                                label="Crítica"
+                                count={priorityBreakdown.critical.length}
+                                color="bg-red-500"
+                                total={stats.pendingCount}
+                                onClick={() => handleDrillDown('Prioridad Crítica', priorityBreakdown.critical, 'border-red-500')}
+                            />
+                            <PriorityBar
+                                label="Alta"
+                                count={priorityBreakdown.high.length}
+                                color="bg-orange-500"
+                                total={stats.pendingCount}
+                                onClick={() => handleDrillDown('Prioridad Alta', priorityBreakdown.high, 'border-orange-500')}
+                            />
+                            <PriorityBar
+                                label="Media"
+                                count={priorityBreakdown.medium.length}
+                                color="bg-blue-500"
+                                total={stats.pendingCount}
+                                onClick={() => handleDrillDown('Prioridad Media', priorityBreakdown.medium, 'border-blue-500')}
+                            />
+                            <PriorityBar
+                                label="Baja"
+                                count={priorityBreakdown.low.length}
+                                color="bg-green-500"
+                                total={stats.pendingCount}
+                                onClick={() => handleDrillDown('Prioridad Baja', priorityBreakdown.low, 'border-green-500')}
+                            />
                         </div>
 
-                        {stats.pending === 0 && (
+                        {stats.pendingCount === 0 && (
                             <div className="text-center py-8 text-gray-400 text-sm italic">
                                 No hay tareas pendientes para mostrar.
                             </div>
@@ -185,57 +247,34 @@ export const Dashboard: React.FC<DashboardProps> = ({ tasks, contextTasks, users
                         </h3>
 
                         <div className="flex flex-col gap-4">
-                            {/* Todo */}
-                            <div className="flex items-center gap-3">
-                                <div className="w-24 text-sm font-medium text-gray-600">Por Hacer</div>
-                                <div className="flex-1 h-8 bg-gray-100 rounded-lg overflow-hidden relative">
-                                    <div
-                                        className="h-full bg-slate-400 rounded-lg flex items-center justify-end px-2 transition-all duration-500"
-                                        style={{ width: `${(statusBreakdown.todo / stats.total) * 100}%` }}
-                                    >
-                                        {statusBreakdown.todo > 0 && <span className="text-xs text-white font-bold">{statusBreakdown.todo}</span>}
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* In Progress */}
-                            <div className="flex items-center gap-3">
-                                <div className="w-24 text-sm font-medium text-gray-600">En Progreso</div>
-                                <div className="flex-1 h-8 bg-gray-100 rounded-lg overflow-hidden relative">
-                                    <div
-                                        className="h-full bg-blue-500 rounded-lg flex items-center justify-end px-2 transition-all duration-500"
-                                        style={{ width: `${(statusBreakdown.inprogress / stats.total) * 100}%` }}
-                                    >
-                                        {statusBreakdown.inprogress > 0 && <span className="text-xs text-white font-bold">{statusBreakdown.inprogress}</span>}
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Review */}
-                            <div className="flex items-center gap-3">
-                                <div className="w-24 text-sm font-medium text-gray-600">En Revisión</div>
-                                <div className="flex-1 h-8 bg-gray-100 rounded-lg overflow-hidden relative">
-                                    <div
-                                        className="h-full bg-purple-500 rounded-lg flex items-center justify-end px-2 transition-all duration-500"
-                                        style={{ width: `${(statusBreakdown.review / stats.total) * 100}%` }}
-                                    >
-                                        {statusBreakdown.review > 0 && <span className="text-xs text-white font-bold">{statusBreakdown.review}</span>}
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Done */}
-                            <div className="flex items-center gap-3">
-                                <div className="w-24 text-sm font-medium text-gray-600">Finalizado</div>
-                                <div className="flex-1 h-8 bg-gray-100 rounded-lg overflow-hidden relative">
-                                    <div
-                                        className="h-full bg-green-500 rounded-lg flex items-center justify-end px-2 transition-all duration-500"
-                                        style={{ width: `${(statusBreakdown.done / stats.total) * 100}%` }}
-                                    >
-                                        {statusBreakdown.done > 0 && <span className="text-xs text-white font-bold">{statusBreakdown.done}</span>}
-                                    </div>
-                                </div>
-                            </div>
+                            <StatusBar
+                                label="Por Hacer"
+                                count={statusBreakdown.todo.length}
+                                total={stats.total}
+                                color="bg-slate-400"
+                                onClick={() => handleDrillDown('Tareas Por Hacer', statusBreakdown.todo, 'border-slate-400')}
+                            />
+                            <StatusBar
+                                label="En Progreso"
+                                count={statusBreakdown.inprogress.length}
+                                total={stats.total}
+                                color="bg-blue-500"
+                                onClick={() => handleDrillDown('Tareas En Progreso', statusBreakdown.inprogress, 'border-blue-500')}
+                            />
+                            <StatusBar
+                                label="En Revisión"
+                                count={statusBreakdown.review.length}
+                                total={stats.total}
+                                color="bg-purple-500"
+                                onClick={() => handleDrillDown('Tareas En Revisión', statusBreakdown.review, 'border-purple-500')}
+                            />
+                            <StatusBar
+                                label="Finalizado"
+                                count={statusBreakdown.done.length}
+                                total={stats.total}
+                                color="bg-green-500"
+                                onClick={() => handleDrillDown('Tareas Finalizadas', statusBreakdown.done, 'border-green-500')}
+                            />
                         </div>
                     </div>
 
@@ -247,21 +286,26 @@ export const Dashboard: React.FC<DashboardProps> = ({ tasks, contextTasks, users
                         </h3>
 
                         <div className="space-y-4">
-                            {userWorkload.map(({ user, count }) => (
-                                <div key={user.id} className="flex items-center gap-3">
-                                    <img src={user.avatar} alt={user.name} className="w-8 h-8 rounded-full bg-gray-200 object-cover" />
+                            {userWorkload.map(({ user, count, tasks }) => (
+                                <div
+                                    key={user.id}
+                                    className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 p-2 rounded-lg transition-colors group"
+                                    onClick={() => handleDrillDown(`Tareas de ${user.name}`, tasks, 'border-indigo-500')}
+                                >
+                                    <img src={user.avatar} alt={user.name} className="w-8 h-8 rounded-full bg-gray-200 object-cover group-hover:ring-2 ring-indigo-200 transition-all" />
                                     <div className="flex-1">
                                         <div className="flex justify-between items-center mb-1">
-                                            <span className="text-sm font-medium text-gray-700">{user.name.split(' ')[0]}</span>
-                                            <span className="text-xs font-bold text-gray-500">{count}</span>
+                                            <span className="text-sm font-medium text-gray-700 group-hover:text-indigo-700">{user.name.split(' ')[0]}</span>
+                                            <span className="text-xs font-bold text-gray-500 group-hover:text-indigo-600">{count}</span>
                                         </div>
                                         <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
                                             <div
-                                                className="h-full bg-indigo-500 rounded-full"
+                                                className="h-full bg-indigo-500 rounded-full group-hover:bg-indigo-600 transition-colors"
                                                 style={{ width: `${(count / maxWorkload) * 100}%` }}
                                             ></div>
                                         </div>
                                     </div>
+                                    <ExternalLink size={14} className="text-gray-300 group-hover:text-indigo-400 opacity-0 group-hover:opacity-100 transition-all" />
                                 </div>
                             ))}
 
@@ -274,27 +318,116 @@ export const Dashboard: React.FC<DashboardProps> = ({ tasks, contextTasks, users
                     </div>
 
                 </div>
-
             </div>
+
+            {/* Drill Down Modal */}
+            {drillDown && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col border-t-4 animate-in zoom-in-95 duration-200"
+                        style={{ borderColor: drillDown.color.replace('border-', 'var(--tw-') }} // Fallback trick, or cleaner: just use inline style from color prop if mapped
+                    >
+                        <div className={`p-5 flex justify-between items-center border-b border-gray-100 ${drillDown.color.replace('border-', 'bg-').replace('500', '50')}`}>
+                            <div className="flex items-center gap-3">
+                                <h3 className="text-xl font-bold text-gray-800">{drillDown.title}</h3>
+                                <span className="bg-white px-2 py-0.5 rounded-full text-xs font-bold text-gray-600 shadow-sm border border-gray-200">
+                                    {drillDown.tasks.length}
+                                </span>
+                            </div>
+                            <button
+                                onClick={() => setDrillDown(null)}
+                                className="p-2 hover:bg-black/5 rounded-full transition-colors text-gray-500"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50/50">
+                            {drillDown.tasks.length > 0 ? (
+                                drillDown.tasks.map(task => (
+                                    <div key={task.id} className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow group">
+                                        <div className="flex justify-between items-start gap-3">
+                                            <div className="flex-1">
+                                                <h4 className="font-medium text-gray-800 group-hover:text-blue-600 transition-colors">{task.title}</h4>
+                                                <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                                                    <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${task.priority === 'critical' ? 'bg-red-100 text-red-700' :
+                                                            task.priority === 'high' ? 'bg-orange-100 text-orange-700' :
+                                                                task.priority === 'medium' ? 'bg-blue-100 text-blue-700' :
+                                                                    'bg-green-100 text-green-700'
+                                                        }`}>
+                                                        {task.priority === 'critical' ? 'Critica' :
+                                                            task.priority === 'high' ? 'Alta' :
+                                                                task.priority === 'medium' ? 'Media' : 'Baja'}
+                                                    </span>
+
+                                                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${task.status === 'done' ? 'bg-green-100 text-green-700' :
+                                                            task.status === 'inprogress' ? 'bg-blue-100 text-blue-700' :
+                                                                task.status === 'review' ? 'bg-purple-100 text-purple-700' :
+                                                                    'bg-gray-100 text-gray-600'
+                                                        }`}>
+                                                        {STATUS_LABELS[task.status]}
+                                                    </span>
+
+                                                    {task.isRecurring && !task.parentTaskId && (
+                                                        <span className="text-[10px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded border border-indigo-100">
+                                                            Recurrente
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className="text-right">
+                                                <div className={`text-xs font-medium ${new Date(task.dueDate) < new Date() && task.status !== 'done' ? 'text-red-500' : 'text-gray-500'
+                                                    }`}>
+                                                    {new Date(task.dueDate).toLocaleDateString('es-ES')}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="text-center py-12 text-gray-400 italic">
+                                    No hay tareas en esta sección.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
 
 // Helper Component for Priority Bar
-const PriorityBar = ({ label, count, color, total }: { label: string, count: number, color: string, total: number }) => {
+const PriorityBar = ({ label, count, color, total, onClick }: { label: string, count: number, color: string, total: number, onClick: () => void }) => {
     const percentage = total > 0 ? (count / total) * 100 : 0;
 
     return (
-        <div>
+        <div onClick={onClick} className="cursor-pointer group">
             <div className="flex justify-between items-center mb-1">
-                <span className="text-sm text-gray-600">{label}</span>
-                <span className="text-xs font-bold text-gray-700">{count}</span>
+                <span className="text-sm text-gray-600 group-hover:text-gray-900 font-medium transition-colors">{label}</span>
+                <span className="text-xs font-bold text-gray-700 bg-gray-100 px-2 py-0.5 rounded-full group-hover:bg-gray-200 transition-colors">{count}</span>
             </div>
             <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
                 <div
-                    className={`h-full ${color} rounded-full transition-all duration-500`}
+                    className={`h-full ${color} rounded-full transition-all duration-500 group-hover:brightness-90`}
                     style={{ width: `${percentage}%` }}
                 ></div>
+            </div>
+        </div>
+    );
+};
+
+// Helper Component for Status Bar (Refactored)
+const StatusBar = ({ label, count, total, color, onClick }: { label: string, count: number, total: number, color: string, onClick: () => void }) => {
+    return (
+        <div onClick={onClick} className="flex items-center gap-3 cursor-pointer group">
+            <div className="w-24 text-sm font-medium text-gray-600 group-hover:text-gray-900 transition-colors">{label}</div>
+            <div className="flex-1 h-8 bg-gray-100 rounded-lg overflow-hidden relative">
+                <div
+                    className={`h-full ${color} rounded-lg flex items-center justify-end px-2 transition-all duration-500 group-hover:brightness-95`}
+                    style={{ width: `${(count / total) * 100}%` }}
+                >
+                    {count > 0 && <span className="text-xs text-white font-bold shadow-sm">{count}</span>}
+                </div>
             </div>
         </div>
     );

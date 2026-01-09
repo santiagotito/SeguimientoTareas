@@ -945,6 +945,22 @@ const App: React.FC = () => {
     return true;
   });
 
+  // Aplicar filtros de tareas madre a contextTasks
+  const displayContextTasks = contextTasks.filter(t => {
+    // Si showMotherTasks está desactivado (por defecto), ocultar tareas madre
+    if (!showMotherTasks && t.isRecurring && !t.parentTaskId) {
+      return false; // Ocultar tarea madre
+    }
+
+    // Si showMotherTasks está activado y showRecurringOnly está activo, solo mostrar tareas madre
+    if (showMotherTasks && showRecurringOnly) {
+      return t.isRecurring && !t.parentTaskId; // Solo tareas madre
+    }
+
+    // Mostrar todas las tareas (incluidas madres e hijas)
+    return true;
+  });
+
   // Tareas para vistas de rendimiento: incluye TODAS las tareas (ignorando filtro de estado)
   // Se usa para comparar el total de tareas vs las que coinciden con los filtros
   const performanceTasksPreFilter = tasks.filter(task => {
@@ -1242,7 +1258,7 @@ const App: React.FC = () => {
                 {viewMode === ViewMode.USER_PERFORMANCE && 'Rendimiento Usuarios'}
               </h1>
               <p className="hidden md:block text-sm text-gray-500 mt-1">
-                Mostrando {filteredTasks.length} de {contextTasks.length} tareas
+                Mostrando {displayTasks.length} de {displayContextTasks.length} tareas
               </p>
             </div>
           </div>
@@ -1312,7 +1328,7 @@ const App: React.FC = () => {
 
           {viewMode === ViewMode.DASHBOARD && (
             <Dashboard
-              tasks={filteredTasks}
+              tasks={displayTasks}
               contextTasks={performanceTasks}
               users={users}
             />
