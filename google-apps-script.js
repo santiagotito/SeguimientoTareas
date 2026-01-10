@@ -159,13 +159,17 @@ function handleUserOperation(sheet, operation, user) {
   const usersSheet = sheet.getSheetByName('Users');
 
   if (operation === 'create') {
-    usersSheet.appendRow([user.id, user.name, user.email, user.password || '', user.role, user.avatar]);
+    usersSheet.appendRow([user.id, user.name, user.email, user.password || '', user.role, user.avatar, user.avatarColor || '#3B82F6']);
   } else if (operation === 'update') {
     const data = usersSheet.getDataRange().getValues();
     for (let i = 1; i < data.length; i++) {
       if (data[i][0] === user.id) {
-        usersSheet.getRange(i + 1, 1, 1, 6).setValues([[
-          user.id, user.name, user.email, user.password || '', user.role, user.avatar
+        // Preservar el password existente si el nuevo está vacío
+        const existingPassword = data[i][3];
+        const finalPassword = (user.password && user.password.trim() !== '') ? user.password : existingPassword;
+
+        usersSheet.getRange(i + 1, 1, 1, 7).setValues([[
+          user.id, user.name, user.email, finalPassword, user.role, user.avatar, user.avatarColor || '#3B82F6'
         ]]);
         break;
       }

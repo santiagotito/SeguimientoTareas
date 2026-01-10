@@ -377,9 +377,16 @@ const App: React.FC = () => {
     // 1️⃣ Bloqueo inmediato
     lastWriteTime.current = Date.now();
 
+    // Preservar el password existente si el nuevo está vacío
+    const existingUser = users.find(u => u.id === user.id);
+    const updatedUser = {
+      ...user,
+      password: user.password && user.password.trim() !== '' ? user.password : existingUser?.password
+    };
+
     // 2️⃣ Actualizar INMEDIATAMENTE
-    usersOptimistic.update(user);
-    const newUsers = users.map(u => u.id === user.id ? user : u);
+    usersOptimistic.update(updatedUser);
+    const newUsers = users.map(u => u.id === user.id ? updatedUser : u);
     localStorage.setItem('users', JSON.stringify(newUsers));
 
     // 2️⃣ Notificación instantánea

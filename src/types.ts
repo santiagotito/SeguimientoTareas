@@ -9,6 +9,7 @@ export interface User {
   email: string;
   password?: string;
   avatar: string;
+  avatarColor?: string;
   role: 'Admin' | 'Analyst';
 }
 

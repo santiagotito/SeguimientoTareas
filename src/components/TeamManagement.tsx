@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { User } from '../types';
 import { Users, Plus, Edit, Trash2, Save, X, Upload } from 'lucide-react';
+import { generateAvatarDataUrl } from '../utils/avatarUtils';
 
 interface TeamManagementProps {
   users: User[];
@@ -25,8 +26,20 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({
     email: '',
     password: '',
     role: 'Analyst' as User['role'],
-    avatar: ''
+    avatar: '',
+    avatarColor: '#3B82F6'
   });
+
+  const avatarColors = [
+    '#3B82F6', // Blue
+    '#8B5CF6', // Purple
+    '#EC4899', // Pink
+    '#F59E0B', // Amber
+    '#10B981', // Green
+    '#EF4444', // Red
+    '#6366F1', // Indigo
+    '#14B8A6', // Teal
+  ];
 
   const handleOpenModal = (user?: User) => {
     if (user) {
@@ -37,7 +50,8 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({
         email: user.email,
         password: '', // Never preload password
         role: user.role,
-        avatar: user.avatar
+        avatar: user.avatar,
+        avatarColor: user.avatarColor || '#3B82F6'
       });
     } else {
       setEditingUser(null);
@@ -47,7 +61,8 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({
         email: '',
         password: '',
         role: 'Analyst',
-        avatar: ''
+        avatar: '',
+        avatarColor: avatarColors[Math.floor(Math.random() * avatarColors.length)]
       });
     }
     setShowModal(true);
@@ -72,19 +87,23 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Prepare final form data
+    let finalFormData = { ...formData };
+
+    // Generate avatar if no image uploaded and name is provided
+    if (!finalFormData.avatar && finalFormData.name.trim()) {
+      finalFormData.avatar = generateAvatarDataUrl(
+        finalFormData.name,
+        finalFormData.avatarColor
+      );
+    }
+
     if (editingUser) {
       // Update existing user
-      // If password is empty string, it typically means "don't change" in backend logic,
-      // but here we just pass whatever. The parent handler should decide if empty password = no change.
-      // Assuming parent handles this logic or we keep existing password if empty.
-      // For now, consistent with previous logic, we pass what we have.
-      onUpdateUser({ ...formData });
+      onUpdateUser(finalFormData);
     } else {
       // Create new user
-      if (!formData.avatar) {
-        formData.avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(formData.name)}&background=random`;
-      }
-      onCreateUser({ ...formData });
+      onCreateUser(finalFormData);
     }
 
     handleCloseModal();
@@ -126,11 +145,20 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({
         {users.map(user => (
           <div key={user.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow">
             <div className="flex items-start gap-4">
-              <img
-                src={user.avatar}
-                alt={user.name}
-                className="w-16 h-16 rounded-full object-cover border-2 border-gray-100"
-              />
+              {user.avatar ? (
+                <img
+                  src={user.avatar}
+                  alt={user.name}
+                  className="w-16 h-16 rounded-full object-cover border-2 border-gray-100"
+                />
+              ) : (
+                <div
+                  className="w-16 h-16 rounded-full flex items-center justify-center text-white text-xl font-bold border-2 border-gray-100"
+                  style={{ backgroundColor: user.avatarColor || '#3B82F6' }}
+                >
+                  {user.name.split(' ').map(n => n.charAt(0).toUpperCase()).join('').substring(0, 2)}
+                </div>
+              )}
               <div className="flex-1 min-w-0">
                 <h3 className="font-bold text-gray-800 truncate">{user.name}</h3>
                 <p className="text-sm text-gray-500 truncate">{user.email}</p>
@@ -185,11 +213,20 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({
               {/* Avatar */}
               <div className="flex flex-col items-center">
                 <div className="relative">
-                  <img
-                    src={formData.avatar || 'https://ui-avatars.com/api/?name=Usuario&background=cccccc'}
-                    alt="Avatar"
-                    className="w-24 h-24 rounded-full object-cover border-4 border-gray-100"
-                  />
+                  {formData.avatar ? (
+                    <img
+                      src={formData.avatar}
+                      alt="Avatar"
+                      className="w-24 h-24 rounded-full object-cover border-4 border-gray-100"
+                    />
+                  ) : (
+                    <div
+                      className="w-24 h-24 rounded-full flex items-center justify-center text-white text-3xl font-bold border-4 border-gray-100"
+                      style={{ backgroundColor: formData.avatarColor }}
+                    >
+                      {formData.name.split(' ').map(n => n.charAt(0).toUpperCase()).join('').substring(0, 2) || 'U'}
+                    </div>
+                  )}
                   <label className="absolute bottom-0 right-0 bg-blue-500 hover:bg-blue-600 text-white p-2 rounded-full cursor-pointer shadow-lg">
                     <Upload size={16} />
                     <input
@@ -200,7 +237,37 @@ export const TeamManagement: React.FC<TeamManagementProps> = ({
                     />
                   </label>
                 </div>
-                <p className="text-xs text-gray-500 mt-2">Click para subir foto</p>
+                <div className="flex gap-2 mt-2 items-center">
+                  <p className="text-xs text-gray-500">Click para subir foto</p>
+                  {formData.avatar && (
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, avatar: '' })}
+                      className="text-xs text-red-600 hover:text-red-800 underline"
+                    >
+                      Eliminar
+                    </button>
+                  )}
+                </div>
+
+                {/* Color picker - solo visible cuando no hay foto */}
+                {!formData.avatar && (
+                  <div className="mt-3">
+                    <label className="block text-xs font-medium text-gray-700 mb-2 text-center">Color del avatar</label>
+                    <div className="flex gap-2 justify-center">
+                      {avatarColors.map(color => (
+                        <button
+                          key={color}
+                          type="button"
+                          onClick={() => setFormData({ ...formData, avatarColor: color })}
+                          className={`w-8 h-8 rounded-full transition-transform ${formData.avatarColor === color ? 'ring-2 ring-offset-2 ring-gray-400 scale-110' : 'hover:scale-110'
+                            }`}
+                          style={{ backgroundColor: color }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Nombre */}
