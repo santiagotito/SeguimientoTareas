@@ -156,23 +156,8 @@ const App: React.FC = () => {
       syncDataFromSheets();
     }, 10000);
 
-    // Verificar cada hora si hay que generar nuevas tareas hijas
-    const dailyCheck = setInterval(async () => {
-      console.log('⏰ Verificación horaria de tareas recurrentes');
-      const newChildren = await generateDailyChildTasks(tasks);
-      if (newChildren.length > 0) {
-        const allTasks = [...tasks, ...newChildren];
-        setTasks(allTasks);
-        localStorage.setItem('tasks', JSON.stringify(allTasks));
-        newChildren.forEach(child => {
-          sheetsService.saveTaskIncremental('create', child);
-        });
-      }
-    }, 3600000); // 1 hora
-
     return () => {
       clearInterval(interval);
-      clearInterval(dailyCheck);
     };
   }, []);
 
@@ -244,26 +229,12 @@ const App: React.FC = () => {
           clientId: t.clientId || null
         }));
 
-        // Generar tareas hijas para HOY (proceso diario)
-        const newChildTasks = await generateDailyChildTasks(tasksWithAssigneeIds);
-
-        const allTasks = [...tasksWithAssigneeIds, ...newChildTasks];
-        tasksOptimistic.setAll(allTasks);
-
-        // Guardar nuevas tareas hijas en Sheets (en background)
-        if (newChildTasks.length > 0) {
-          newChildTasks.forEach(childTask => {
-            tasksOptimistic.create(childTask);
-          });
-        }
+        tasksOptimistic.setAll(tasksWithAssigneeIds);
       } else {
         const savedTasks = localStorage.getItem('tasks');
         if (savedTasks) {
           const parsed = JSON.parse(savedTasks);
-          const newChildTasks = await generateDailyChildTasks(parsed);
-          const allTasks = [...parsed, ...newChildTasks];
-          tasksOptimistic.setAll(allTasks);
-          localStorage.setItem('tasks', JSON.stringify(allTasks));
+          tasksOptimistic.setAll(parsed);
         }
       }
     } catch (error) {
@@ -276,80 +247,6 @@ const App: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  // Generar tareas hijas para HOY (proceso diario)
-  const generateDailyChildTasks = async (allTasks: Task[]): Promise<Task[]> => {
-    const today = getLocalDateString(); // Fecha local, no UTC
-    const todayDate = new Date(today);
-
-    console.log('🌅 Proceso diario: Generando tareas para', today);
-
-    // Filtrar solo tareas madre activas
-    const motherTasks = allTasks.filter(t => t.isRecurring && !t.parentTaskId);
-
-    const newChildTasks: Task[] = [];
-
-    for (const mother of motherTasks) {
-      if (!mother.recurrence) continue;
-
-      const startDate = new Date(mother.startDate);
-      const endDate = new Date(mother.recurrence.endDate || mother.dueDate);
-
-      // Verificar si hoy está en el rango
-      if (todayDate < startDate || todayDate > endDate) continue;
-
-      // Verificar si debe crear tarea hoy
-      const shouldCreate = checkIfShouldCreateTask(today, mother.recurrence);
-
-      if (!shouldCreate) {
-        console.log(`  ⏭️ "${mother.title}" - Hoy no coincide`);
-        continue;
-      }
-
-      // Verificar si ya existe tarea hija para hoy
-      const existsToday = allTasks.some(t =>
-        t.parentTaskId === mother.id &&
-        t.startDate === today
-      );
-
-      if (existsToday) {
-        console.log(`  ℹ️ "${mother.title}" - Ya existe tarea para hoy`);
-        continue;
-      }
-
-      // Crear tarea hija
-      console.log(`  ✅ Creando tarea hija para "${mother.title}"`);
-
-      const childTask: Task = {
-        id: `t${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        title: `${mother.title} (${today})`,
-        description: mother.description,
-        status: 'todo',
-        priority: mother.priority,
-        assigneeId: mother.assigneeId,
-        assigneeIds: mother.assigneeIds,
-        clientId: mother.clientId,
-        startDate: today,
-        dueDate: today,
-        tags: mother.tags,
-        completedDate: null,
-        isRecurring: false,
-        recurrence: undefined,
-        instances: [],
-        parentTaskId: mother.id
-      };
-
-      newChildTasks.push(childTask);
-    }
-
-    if (newChildTasks.length > 0) {
-      console.log(`✅ ${newChildTasks.length} tareas hijas creadas para hoy`);
-    } else {
-      console.log('ℹ️ No se crearon tareas nuevas hoy');
-    }
-
-    return newChildTasks;
   };
 
   // LEGACY: Guardado completo (mantener por compatibilidad)
