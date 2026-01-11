@@ -43,7 +43,7 @@ export const SystemSettings: React.FC<SystemSettingsProps> = ({ config, onUpdate
 
             // Normalizar config antes de guardar
             const normalizedConfig = {
-                appName: formData.appName || 'Tráfico Analítica RAM',
+                appName: formData.appName || 'Tráfico Proyectos JMC',
                 logo: (formData.logo && formData.logo.trim() !== '') ? formData.logo : 'https://rangle.ec/img/ram.webp'
             };
 
@@ -91,7 +91,7 @@ export const SystemSettings: React.FC<SystemSettingsProps> = ({ config, onUpdate
                                 value={formData.appName}
                                 onChange={(e) => setFormData(prev => ({ ...prev, appName: e.target.value }))}
                                 className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-ram-blue/20 focus:border-ram-blue transition-all"
-                                placeholder="Ej. Tráfico Analítica RAM"
+                                placeholder="Ej. Tráfico Proyectos JMC"
                             />
                             <p className="mt-2 text-xs text-gray-400">Este nombre aparecerá en la pantalla de inicio de sesión y en el título de la página.</p>
                         </div>

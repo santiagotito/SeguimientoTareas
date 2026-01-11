@@ -65,7 +65,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
               className="h-24 object-contain"
             />
           </div>
-          <h1 className="text-3xl font-bold text-gray-800 mb-2">Tráfico Analítica RAM</h1>
+          <h1 className="text-3xl font-bold text-gray-800 mb-2">Tráfico Proyectos JMC</h1>
           <p className="text-gray-500">Sistema de Gestión de Tareas</p>
         </div>
 
@@ -119,7 +119,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
         {/* Footer con copyright */}
         <div className="mt-8 text-center">
           <p className="text-sm text-gray-400">
-            © {new Date().getFullYear()} Desarrollado por Analítica RAM
+            © {new Date().getFullYear()} Desarrollado por Santiago Tito
           </p>
         </div>
       </div>

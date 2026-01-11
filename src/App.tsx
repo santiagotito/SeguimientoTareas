@@ -1444,7 +1444,7 @@ const App: React.FC = () => {
           {/* Footer con copyright */}
           <div className="mt-auto pt-8 pb-4 px-4 text-center border-t border-gray-200">
             <p className="text-xs text-gray-400">
-              © {new Date().getFullYear()} Desarrollado por Analítica RAM
+              © {new Date().getFullYear()} Desarrollado por Santiago Tito
             </p>
           </div>
 
@@ -1460,7 +1460,7 @@ const App: React.FC = () => {
                   </div>
                   <div>
                     <h2 className="text-xl font-bold text-gray-900">Reporte Diario de Tareas</h2>
-                    <p className="text-sm text-gray-500">Tráfico Analítica RAM</p>
+                    <p className="text-sm text-gray-500">Tráfico Proyectos JMC</p>
                   </div>
                 </div>
                 <button

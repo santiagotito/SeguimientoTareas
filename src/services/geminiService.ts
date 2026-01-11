@@ -36,7 +36,7 @@ export const generateDailyReport = (tasks: Task[], users: User[]): string => {
   });
 
   // Construir reporte
-  let report = `REPORTE DIARIO - TRÁFICO ANALÍTICA RAM\n`;
+  let report = `REPORTE DIARIO - TRÁFICO PROYECTOS JMC\n`;
   report += `Fecha: ${todayFormatted}\n`;
   report += `═══════════════════════════════════════════════════════\n\n`;
 
@@ -111,7 +111,7 @@ export const generateDailyReport = (tasks: Task[], users: User[]): string => {
 
   // Pie de reporte
   report += `═══════════════════════════════════════════════════════\n`;
-  report += `Reporte generado automáticamente por Tráfico Analítica RAM\n`;
+  report += `Reporte generado automáticamente por Tráfico Proyectos JMC\n`;
 
   return report;
 };
