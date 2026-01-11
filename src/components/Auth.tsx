@@ -115,6 +115,13 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
             )}
           </button>
         </form>
+
+        {/* Footer con copyright */}
+        <div className="mt-8 text-center">
+          <p className="text-sm text-gray-400">
+            © {new Date().getFullYear()} Desarrollado por Analítica RAM
+          </p>
+        </div>
       </div>
     </div>
   );

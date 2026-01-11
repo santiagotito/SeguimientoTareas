@@ -1441,6 +1441,13 @@ const App: React.FC = () => {
             />
           )}
 
+          {/* Footer con copyright */}
+          <div className="mt-auto pt-8 pb-4 px-4 text-center border-t border-gray-200">
+            <p className="text-xs text-gray-400">
+              © {new Date().getFullYear()} Desarrollado por Analítica RAM
+            </p>
+          </div>
+
         </div>
 
         {emailDraft && (
