@@ -103,3 +103,6 @@ t1 | ...   | ...         | todo   | high     | u1         | 2024-...  | 2024... 
 ## 📄 Licencia
 
 MIT
+
+---
+*Last update: 2026-01-14*
