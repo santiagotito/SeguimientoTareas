@@ -65,7 +65,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
               className="h-24 object-contain"
             />
           </div>
-          <h1 className="text-3xl font-bold text-gray-800 mb-2">Tráfico Proyectos JMC</h1>
+          <h1 className="text-3xl font-bold text-gray-800 mb-2">Tráfico JMC</h1>
           <p className="text-gray-500">Sistema de Gestión de Tareas</p>
         </div>
 

@@ -410,8 +410,6 @@ const App: React.FC = () => {
   };
 
   const handleCreateTask = (taskData: Partial<Task>) => {
-    console.log('📝 Creando tarea con datos:', taskData);
-
     // Normalizar recurrence si viene con "days" en lugar de "daysOfWeek"
     let normalizedRecurrence = taskData.recurrence;
     if (normalizedRecurrence && (normalizedRecurrence as any).days) {
@@ -422,12 +420,10 @@ const App: React.FC = () => {
         daysOfWeek: daysArray.map((d: number) => dayNames[d]) as any,
         enabled: true
       };
-      console.log('🔄 Normalizado days a daysOfWeek:', normalizedRecurrence.daysOfWeek);
     }
 
     if (normalizedRecurrence && normalizedRecurrence.enabled === undefined) {
       normalizedRecurrence.enabled = true;
-      console.log('🔧 Agregado enabled=true a recurrence');
     }
 
     // Crear tarea MADRE
@@ -450,8 +446,6 @@ const App: React.FC = () => {
       parentTaskId: null
     };
 
-    console.log('👩 Tarea madre creada:', motherTask);
-
     let newTasks = [motherTask];
 
     // Si es recurrente Y hoy es un día válido, crear tarea HIJA para HOY
@@ -461,17 +455,10 @@ const App: React.FC = () => {
       const endDate = new Date(motherTask.recurrence.endDate || motherTask.dueDate);
       const todayDate = new Date(today);
 
-      console.log('📅 Verificando si crear tarea para hoy:', {
-        today,
-        startDate: getLocalDateString(startDate),
-        endDate: getLocalDateString(endDate)
-      });
-
       if (todayDate >= startDate && todayDate <= endDate) {
         const shouldCreateToday = checkIfShouldCreateTask(today, motherTask.recurrence);
 
         if (shouldCreateToday) {
-          console.log('✅ Creando tarea hija para HOY');
           const childTask: Task = {
             id: `t${Date.now()}_child_${today}`,
             title: `${motherTask.title} (${today})`,
@@ -492,9 +479,6 @@ const App: React.FC = () => {
           };
 
           newTasks.push(childTask);
-          console.log('👶 Tarea hija creada:', childTask);
-        } else {
-          console.log('⏭️ HOY no es un día válido para esta recurrencia');
         }
       }
     }
@@ -544,22 +528,12 @@ const App: React.FC = () => {
     const dayOfWeek = date.getDay(); // 0=Dom, 1=Lun, ..., 6=Sab
     const dayOfMonth = date.getDate(); // 1-31
 
-    console.log('🔍 checkIfShouldCreateTask:', {
-      fecha: dateString,
-      dayOfWeek,
-      dayOfMonth,
-      frequency: recurrence.frequency,
-      daysOfWeek: recurrence.daysOfWeek,
-      days: recurrence.days
-    });
-
     const dayMap: Record<string, number> = {
       sunday: 0, monday: 1, tuesday: 2, wednesday: 3,
       thursday: 4, friday: 5, saturday: 6
     };
 
     if (recurrence.frequency === 'daily') {
-      console.log('  ✅ Diaria - siempre true');
       return true;
     }
 
@@ -570,14 +544,9 @@ const App: React.FC = () => {
       // Si no hay daysOfWeek pero hay days, usar days directamente
       if (targetDays.length === 0 && recurrence.days) {
         targetDays = recurrence.days;
-        console.log('  🔄 Usando days directamente:', targetDays);
       }
 
-      console.log('  🎯 Días objetivo:', targetDays);
-      console.log('  📅 Hoy es día:', dayOfWeek);
-
       const resultado = targetDays.includes(dayOfWeek);
-      console.log(`  ${resultado ? '✅' : '❌'} Resultado:`, resultado);
 
       return resultado;
     }
@@ -585,11 +554,9 @@ const App: React.FC = () => {
     if (recurrence.frequency === 'monthly') {
       const targetDay = recurrence.dayOfMonth || 1;
       const resultado = dayOfMonth === targetDay;
-      console.log(`  ${resultado ? '✅' : '❌'} Mensual - Día objetivo: ${targetDay}, Hoy: ${dayOfMonth}`);
       return resultado;
     }
 
-    console.log('  ❌ Frecuencia no reconocida');
     return false;
   };
 
@@ -1460,7 +1427,7 @@ const App: React.FC = () => {
                   </div>
                   <div>
                     <h2 className="text-xl font-bold text-gray-900">Reporte Diario de Tareas</h2>
-                    <p className="text-sm text-gray-500">Tráfico Proyectos JMC</p>
+                    <p className="text-sm text-gray-500">Tráfico JMC</p>
                   </div>
                 </div>
                 <button

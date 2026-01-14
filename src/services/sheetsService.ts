@@ -8,25 +8,25 @@ export const sheetsService = {
       console.log('🔄 Cargando clientes de Sheets...');
       const range = 'Clients!A:B';
       const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${range}?key=${API_KEY}`;
-      
+
       if (!API_KEY || !SHEET_ID) {
         console.error('❌ Faltan credenciales para clientes:', { API_KEY: !!API_KEY, SHEET_ID: !!SHEET_ID });
         return [];
       }
-      
+
       const response = await fetch(url);
       const data = await response.json();
-      
+
       if (data.error) {
         console.error('❌ Error de Google Sheets API (clientes):', data.error);
         return [];
       }
-      
+
       if (!data.values || data.values.length <= 1) {
         console.warn('⚠️ Hoja Clients vacía o sin datos');
         return [];
       }
-      
+
       const [headers, ...rows] = data.values;
       console.log(`✅ ${rows.length} clientes cargados`);
       return rows.map(row => ({
@@ -45,25 +45,25 @@ export const sheetsService = {
       console.log('🔄 Cargando usuarios de Sheets...');
       const range = 'Users!A:F';
       const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${range}?key=${API_KEY}`;
-      
+
       if (!API_KEY || !SHEET_ID) {
         console.error('❌ Faltan credenciales:', { API_KEY: !!API_KEY, SHEET_ID: !!SHEET_ID });
         return [];
       }
-      
+
       const response = await fetch(url);
       const data = await response.json();
-      
+
       if (data.error) {
         console.error('❌ Error de Google Sheets API:', data.error);
         return [];
       }
-      
+
       if (!data.values || data.values.length <= 1) {
         console.warn('⚠️ Hoja Users vacía o sin datos');
         return [];
       }
-      
+
       const [headers, ...rows] = data.values;
       console.log(`✅ ${rows.length} usuarios cargados`);
       return rows.map(row => ({
@@ -83,27 +83,27 @@ export const sheetsService = {
   async getTasks() {
     try {
       console.log('🔄 Cargando tareas de Sheets...');
-      const range = 'Tasks!A:N'; // Solo hasta N (parentTaskId)
+      const range = 'Tasks!A:N'; // Hasta N (14 columnas: id...parentTaskId)
       const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${range}?key=${API_KEY}`;
-      
+
       if (!API_KEY || !SHEET_ID) {
         console.error('❌ Faltan credenciales para tareas:', { API_KEY: !!API_KEY, SHEET_ID: !!SHEET_ID });
         return [];
       }
-      
+
       const response = await fetch(url);
       const data = await response.json();
-      
+
       if (data.error) {
         console.error('❌ Error de Google Sheets API (tareas):', data.error);
         return [];
       }
-      
+
       if (!data.values || data.values.length <= 1) {
         console.warn('⚠️ Hoja Tasks vacía o sin datos');
         return [];
       }
-      
+
       // Helper para normalizar fechas
       const normalizeDate = (dateStr: string) => {
         if (!dateStr) {
@@ -122,19 +122,19 @@ export const sheetsService = {
         const d = new Date(dateStr);
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       };
-      
+
       const [headers, ...rows] = data.values;
       console.log(`✅ ${rows.length} tareas cargadas`);
       return rows.map(row => {
         // Parsear recurrence
         let recurrence = undefined;
         let isRecurring = false;
-        
+
         if (row[12]) {
           try {
             recurrence = JSON.parse(row[12]);
             isRecurring = true;
-            
+
             // Normalizar days a daysOfWeek si existe
             if (recurrence && recurrence.days && !recurrence.daysOfWeek) {
               const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
@@ -146,7 +146,7 @@ export const sheetsService = {
             console.warn('Error parseando recurrence:', row[12]);
           }
         }
-        
+
         return {
           id: row[0] || '',
           title: row[1] || '',
@@ -176,7 +176,7 @@ export const sheetsService = {
     // Solo guardar en localStorage - las tareas se sincronizan individualmente
     localStorage.setItem('tasks', JSON.stringify(tasks));
   },
-  
+
   async addTask(task: any) {
     if (!APPS_SCRIPT_URL) return;
     try {
@@ -191,7 +191,7 @@ export const sheetsService = {
       console.error('❌ Error agregando tarea:', error);
     }
   },
-  
+
   async updateTask(task: any) {
     if (!APPS_SCRIPT_URL) return;
     try {
@@ -206,7 +206,7 @@ export const sheetsService = {
       console.error('❌ Error actualizando tarea:', error);
     }
   },
-  
+
   async deleteTask(taskId: string) {
     if (!APPS_SCRIPT_URL) return;
     try {
@@ -221,7 +221,7 @@ export const sheetsService = {
       console.error('❌ Error eliminando tarea:', error);
     }
   },
-  
+
   async addClient(client: any) {
     if (!APPS_SCRIPT_URL) return;
     try {
@@ -236,7 +236,7 @@ export const sheetsService = {
       console.error('❌ Error agregando cliente:', error);
     }
   },
-  
+
   async updateClient(client: any) {
     if (!APPS_SCRIPT_URL) return;
     try {
@@ -251,7 +251,7 @@ export const sheetsService = {
       console.error('❌ Error actualizando cliente:', error);
     }
   },
-  
+
   async deleteClient(clientId: string) {
     if (!APPS_SCRIPT_URL) return;
     try {
@@ -340,14 +340,23 @@ export const sheetsService = {
         ...task,
         instances: undefined // NO enviar instances
       };
-      
-      await fetch(APPS_SCRIPT_URL, {
+
+      const response = await fetch(APPS_SCRIPT_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // 'text/plain' evita el preflight OPTIONS que Apps Script no soporta
         body: JSON.stringify({ operation, type: 'task', item: taskForSheets }),
-        mode: 'no-cors'
+        redirect: 'follow'
       });
-      console.log(`✅ Tarea ${operation} en Sheets`);
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+
+      if (!result.success) {
+        console.error('❌ Error devuelto por el script:', result.error);
+      }
     } catch (error) {
       console.error(`❌ Error ${operation} tarea:`, error);
     }

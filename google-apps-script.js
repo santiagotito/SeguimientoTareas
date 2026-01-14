@@ -1,28 +1,38 @@
+function doGet(e) {
+  return ContentService.createTextOutput('Hello! The script is active and accessible via GET.').setMimeType(ContentService.MimeType.TEXT);
+}
+
 function doPost(e) {
   try {
     const sheet = SpreadsheetApp.getActiveSpreadsheet();
+    logToSheet(sheet, 'doPost RECEIVED', { postDataLength: e.postData.length, type: e.postData.type });
+
     const data = JSON.parse(e.postData.contents);
 
-    // NUEVO: Manejar operación específica (create, update, delete)
-    if (data.operation) {
-      return handleIncrementalOperation(sheet, data);
+    // SISTEMA INCREMENTAL (nuevo)
+    if (data.operation && data.type && data.item) {
+      return handleIncrementalOperation_Fixed(sheet, data);
     }
 
-    // LEGACY: Mantener compatibilidad con guardado completo
+    // LEGACY: Mantener compatibilidad con guardado completo (Bulk Save)
     if (data.tasks) {
       const tasksSheet = sheet.getSheetByName('Tasks');
       if (tasksSheet.getLastRow() > 1) {
         tasksSheet.deleteRows(2, tasksSheet.getLastRow() - 1);
       }
       if (tasksSheet.getLastRow() === 0) {
-        tasksSheet.appendRow(['id', 'title', 'description', 'status', 'priority', 'assigneeId', 'startDate', 'dueDate', 'tags', 'assigneeIds', 'clientId']);
+        tasksSheet.appendRow(['id', 'title', 'description', 'status', 'priority', 'assigneeId', 'startDate', 'dueDate', 'tags', 'assigneeIds', 'clientId', 'completedDate', 'recurrence', 'parentTaskId']);
       }
       data.tasks.forEach(task => {
+        // Asegurar que tengamos 14 columnas para coincidir con el esquema nuevo
         tasksSheet.appendRow([
           task.id || '', task.title || '', task.description || '', task.status || 'todo',
           task.priority || 'medium', task.assigneeId || '', task.startDate || '',
           task.dueDate || '', (task.tags || []).join(','), (task.assigneeIds || []).join(','),
-          task.clientId || ''
+          task.clientId || '',
+          task.completedDate || '',
+          task.recurrence ? JSON.stringify(task.recurrence) : '', // Intentar preservar recurrencia si viene
+          task.parentTaskId || ''
         ]);
       });
     }
@@ -59,68 +69,158 @@ function doPost(e) {
       });
     }
 
-    return ContentService
-      .createTextOutput(JSON.stringify({ success: true }))
-      .setMimeType(ContentService.MimeType.JSON);
+    if (data.tasks || data.users || data.clients) {
+      return ContentService.createTextOutput(JSON.stringify({ success: true, _version: 'DEBUG_VERIFIED_LEGACY_SUPPORT', message: 'Legacy bulk save executed' })).setMimeType(ContentService.MimeType.JSON);
+    }
 
+    // Si no es incremental ni legacy conocido
+    return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'Operación no reconocida' })).setMimeType(ContentService.MimeType.JSON);
   } catch (error) {
-    return ContentService
-      .createTextOutput(JSON.stringify({ success: false, error: error.toString() }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return ContentService.createTextOutput(JSON.stringify({ success: false, error: error.toString() })).setMimeType(ContentService.MimeType.JSON);
   }
 }
 
-// NUEVA FUNCIÓN: Operaciones incrementales
-function handleIncrementalOperation(sheet, data) {
+// SISTEMA INCREMENTAL
+function handleIncrementalOperation_Fixed(sheet, data) {
   const { operation, type, item } = data;
 
   if (type === 'task') {
-    return handleTaskOperation(sheet, operation, item);
+    return handleTaskOperation_Fixed(sheet, operation, item);
   } else if (type === 'client') {
     return handleClientOperation(sheet, operation, item);
   } else if (type === 'user') {
     return handleUserOperation(sheet, operation, item);
   }
 
-  return ContentService
-    .createTextOutput(JSON.stringify({ success: false, error: 'Unknown type' }))
-    .setMimeType(ContentService.MimeType.JSON);
+  return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'Tipo no reconocido' })).setMimeType(ContentService.MimeType.JSON);
 }
 
-function handleTaskOperation(sheet, operation, task) {
-  const tasksSheet = sheet.getSheetByName('Tasks');
+function logToSheet(sheet, message, data) {
+  try {
+    let logsSheet = sheet.getSheetByName('Logs');
+    if (!logsSheet) {
+      logsSheet = sheet.insertSheet('Logs');
+      logsSheet.appendRow(['Timestamp', 'Message', 'Data']);
+    }
+    logsSheet.appendRow([new Date(), message, stringifySafe(data)]);
+  } catch (e) {
+    console.error('Error logging to sheet', e);
+  }
+}
+
+// Helper seguro para stringify
+function stringifySafe(obj) {
+  try {
+    return JSON.stringify(obj);
+  } catch (e) {
+    return 'Error stringify: ' + e.toString();
+  }
+}
+
+function handleTaskOperation_Fixed(sheet, operation, task) {
+  console.log('handleTaskOperation_Fixed START', stringifySafe(task));
+  logToSheet(sheet, 'handleTaskOperation_Fixed START', { operation, task });
+
+  let tasksSheet = sheet.getSheetByName('Tasks');
+  if (!tasksSheet) {
+    tasksSheet = sheet.insertSheet('Tasks');
+    tasksSheet.appendRow(['id', 'title', 'description', 'status', 'priority', 'assigneeId', 'startDate', 'dueDate', 'tags', 'assigneeIds', 'clientId', 'completedDate', 'recurrence', 'parentTaskId']);
+  }
+
+  // Helper para formatear recurrencia
+  const formatRecurrence = (recurrence) => {
+    console.log('Formateando recurrencia (FIXED):', stringifySafe(recurrence));
+    if (!recurrence) return '';
+    return JSON.stringify(recurrence);
+  };
+
+  const recurrenceStr = formatRecurrence(task.recurrence);
+  console.log('Recurrencia formateada string (FIXED):', recurrenceStr);
+  logToSheet(sheet, 'Recurrence String', { recurrenceInput: task.recurrence, result: recurrenceStr });
 
   if (operation === 'create') {
+    // Verificar si ya existe
+    const data = tasksSheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      // ... (resto del codigo igual)
+
+      if (data[i][0] === task.id) {
+        // Ya existe, actualizar
+        tasksSheet.getRange(i + 1, 1, 1, 14).setValues([[
+          task.id,
+          task.title || '',
+          task.description || '',
+          task.status || 'todo',
+          task.priority || 'medium',
+          task.assigneeId || '',
+          task.startDate || '',
+          task.dueDate || '',
+          (task.tags || []).join(','),
+          (task.assigneeIds || []).join(','),
+          task.clientId || '',
+          task.completedDate || '',
+          recurrenceStr,
+          task.parentTaskId || ''
+        ]]);
+        return ContentService.createTextOutput(JSON.stringify({ success: true })).setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+
+    // No existe, crear
+    console.log('Intentando appendRow con recurrencia:', recurrenceStr);
     tasksSheet.appendRow([
-      task.id, task.title, task.description, task.status, task.priority,
-      task.assigneeId || '', task.startDate, task.dueDate,
-      (task.tags || []).join(','), (task.assigneeIds || []).join(','), task.clientId || ''
+      task.id || '',
+      task.title || '',
+      task.description || '',
+      task.status || 'todo',
+      task.priority || 'medium',
+      task.assigneeId || '',
+      task.startDate || '',
+      task.dueDate || '',
+      (task.tags || []).join(','),
+      (task.assigneeIds || []).join(','),
+      task.clientId || '',
+      task.completedDate || '',
+      recurrenceStr,
+      task.parentTaskId || ''
     ]);
+    console.log('appendRow ejecutado');
+
   } else if (operation === 'update') {
     const data = tasksSheet.getDataRange().getValues();
     for (let i = 1; i < data.length; i++) {
       if (data[i][0] === task.id) {
-        tasksSheet.getRange(i + 1, 1, 1, 11).setValues([[
-          task.id, task.title, task.description, task.status, task.priority,
-          task.assigneeId || '', task.startDate, task.dueDate,
-          (task.tags || []).join(','), (task.assigneeIds || []).join(','), task.clientId || ''
+        tasksSheet.getRange(i + 1, 1, 1, 14).setValues([[
+          task.id,
+          task.title || '',
+          task.description || '',
+          task.status || 'todo',
+          task.priority || 'medium',
+          task.assigneeId || '',
+          task.startDate || '',
+          task.dueDate || '',
+          (task.tags || []).join(','),
+          (task.assigneeIds || []).join(','),
+          task.clientId || '',
+          task.completedDate || '',
+          recurrenceStr,
+          task.parentTaskId || ''
         ]]);
-        break;
+        return ContentService.createTextOutput(JSON.stringify({ success: true })).setMimeType(ContentService.MimeType.JSON);
       }
     }
+
   } else if (operation === 'delete') {
     const data = tasksSheet.getDataRange().getValues();
     for (let i = 1; i < data.length; i++) {
       if (data[i][0] === task.id) {
         tasksSheet.deleteRow(i + 1);
-        break;
+        return ContentService.createTextOutput(JSON.stringify({ success: true })).setMimeType(ContentService.MimeType.JSON);
       }
     }
   }
 
-  return ContentService
-    .createTextOutput(JSON.stringify({ success: true }))
-    .setMimeType(ContentService.MimeType.JSON);
+  return ContentService.createTextOutput(JSON.stringify({ success: true })).setMimeType(ContentService.MimeType.JSON);
 }
 
 function handleClientOperation(sheet, operation, client) {
@@ -150,26 +250,36 @@ function handleClientOperation(sheet, operation, client) {
     }
   }
 
-  return ContentService
-    .createTextOutput(JSON.stringify({ success: true }))
-    .setMimeType(ContentService.MimeType.JSON);
+  return ContentService.createTextOutput(JSON.stringify({ success: true })).setMimeType(ContentService.MimeType.JSON);
 }
 
 function handleUserOperation(sheet, operation, user) {
-  const usersSheet = sheet.getSheetByName('Users');
+  let usersSheet = sheet.getSheetByName('Users');
+  if (!usersSheet) {
+    usersSheet = sheet.insertSheet('Users');
+    usersSheet.appendRow(['id', 'name', 'email', 'password', 'role', 'avatar']);
+  }
 
   if (operation === 'create') {
-    usersSheet.appendRow([user.id, user.name, user.email, user.password || '', user.role, user.avatar, user.avatarColor || '#3B82F6']);
+    usersSheet.appendRow([
+      user.id,
+      user.name,
+      user.email,
+      user.password || '',
+      user.role,
+      user.avatar
+    ]);
   } else if (operation === 'update') {
     const data = usersSheet.getDataRange().getValues();
     for (let i = 1; i < data.length; i++) {
       if (data[i][0] === user.id) {
-        // Preservar el password existente si el nuevo está vacío
-        const existingPassword = data[i][3];
-        const finalPassword = (user.password && user.password.trim() !== '') ? user.password : existingPassword;
-
-        usersSheet.getRange(i + 1, 1, 1, 7).setValues([[
-          user.id, user.name, user.email, finalPassword, user.role, user.avatar, user.avatarColor || '#3B82F6'
+        usersSheet.getRange(i + 1, 1, 1, 6).setValues([[
+          user.id,
+          user.name,
+          user.email,
+          user.password || '',
+          user.role,
+          user.avatar
         ]]);
         break;
       }
@@ -184,32 +294,19 @@ function handleUserOperation(sheet, operation, user) {
     }
   }
 
-  return ContentService
-    .createTextOutput(JSON.stringify({ success: true }))
-    .setMimeType(ContentService.MimeType.JSON);
+  return ContentService.createTextOutput(JSON.stringify({ success: true, _version: 'DEBUG_VERIFIED', message: 'Row appended successfully' })).setMimeType(ContentService.MimeType.JSON);
 }
 
-function doGet(e) {
-  return ContentService
-    .createTextOutput(JSON.stringify({ status: 'Apps Script activo' }))
-    .setMimeType(ContentService.MimeType.JSON);
-}
-
-// ============== PROCESO DIARIO AUTOMÁTICO ==============
-// Este código va en tu Apps Script de Google Sheets
-
-/**
- * Función principal que se ejecuta automáticamente cada día
- * Crea tareas hijas para todas las tareas madre que coincidan con hoy
- */
-function processRecurringTasksDaily() {
+// ============== GENERACIÓN DE TAREAS RECURRENTES (BACKEND) ==============
+// ============== PROCESO DIARIO AUTOMÁTICO (LEGACY RESTAURADO) ==============
+function processRecurringTasks() {
   const lock = LockService.getScriptLock();
 
   try {
     // Intentar obtener el lock (evita ejecuciones simultáneas)
     lock.waitLock(30000); // 30 segundos max
   } catch (e) {
-    Logger.log('No se pudo obtener el lock. Otra ejecución en curso.');
+    console.log('No se pudo obtener el lock. Otra ejecución en curso.');
     return;
   }
 
@@ -218,7 +315,7 @@ function processRecurringTasksDaily() {
     const tasksSheet = sheet.getSheetByName('Tasks');
 
     if (!tasksSheet) {
-      Logger.log('ERROR: Hoja Tasks no encontrada');
+      console.log('ERROR: Hoja Tasks no encontrada');
       return;
     }
 
@@ -228,21 +325,18 @@ function processRecurringTasksDaily() {
     const dayOfWeek = now.getDay();
     const dayOfMonth = now.getDate();
 
-    Logger.log(`Zona horaria: ${Session.getScriptTimeZone()}`);
-    Logger.log(`Fecha actual: ${new Date()}`);
-    Logger.log(`Fecha formateada: ${today}`);
-    Logger.log(`Día de semana: ${dayOfWeek} (0=Dom, 1=Lun, 2=Mar, 3=Mié, 4=Jue, 5=Vie, 6=Sáb)`);
-
-
-    Logger.log(`🌅 Proceso diario iniciado para: ${today} (día ${dayOfWeek})`);
+    console.log(`🌅 Proceso diario iniciado para: ${today} (día ${dayOfWeek})`);
 
     // Leer todas las tareas
     const data = tasksSheet.getDataRange().getValues();
     const headers = data[0];
 
-    // Encontrar índices de columnas importantes
+    // Encontrar índices de columnas importantes (Usando nombres exactos del legacy)
     const colId = headers.indexOf('id');
-    const colTitle = headers.indexOf('tittle');
+    // Soporte para 'tittle' (typo legacy) o 'title'
+    let colTitle = headers.indexOf('tittle');
+    if (colTitle === -1) colTitle = headers.indexOf('title');
+
     const colDescription = headers.indexOf('description');
     const colStatus = headers.indexOf('status');
     const colPriority = headers.indexOf('priority');
@@ -272,7 +366,7 @@ function processRecurringTasksDaily() {
       try {
         recurrence = JSON.parse(recurrenceJson);
       } catch (e) {
-        Logger.log(`Error parseando recurrence de tarea ${row[colId]}: ${e}`);
+        console.log(`Error parseando recurrence de tarea ${row[colId]}: ${e}`);
         continue;
       }
 
@@ -280,18 +374,19 @@ function processRecurringTasksDaily() {
 
       // Verificar rango de fechas
       const startDate = new Date(row[colStartDate]);
+      // Fix fecha fin: si no hay endDate en recurrence, usar dueDate
       const endDate = new Date(recurrence.endDate || row[colDueDate]);
 
-      // Fix date comparison to ignore time components for start/end checks if needed, 
-      // but here we just need to ensure current date is within range.
-      // Basic check:
-      if (todayDate < startDate || todayDate > endDate) continue;
+      // Verificar si la fecha actual está dentro del rango
+      // Normalizamos fechas a string para comparar solo YYYY-MM-DD si es necesario, 
+      // pero la comparación de objetos Date básicos funciona para > <
+      if (now < startDate) continue; // Aún no empieza
 
-
-      Logger.log(`  📋 Tarea: "${row[colTitle] || 'undefined'}"`);
-      Logger.log(`  Frecuencia: ${recurrence.frequency}`);
-      Logger.log(`  Días: ${JSON.stringify(recurrence.days)}`);
-      Logger.log(`  Hoy es día: ${dayOfWeek}`);
+      // Para endDate, comparamos que hoy no sea mayor al final del día de endDate
+      // Simplemente: si hoy (YYYY-MM-DD) es mayor que endDate (YYYY-MM-DD) -> break
+      const todayStr = today;
+      const endDateStr = Utilities.formatDate(endDate, 'GMT-5', 'yyyy-MM-dd');
+      if (todayStr > endDateStr) continue;
 
 
       // Verificar si debe crear tarea hoy según frecuencia
@@ -300,7 +395,13 @@ function processRecurringTasksDaily() {
       if (recurrence.frequency === 'daily') {
         shouldCreate = true;
       } else if (recurrence.frequency === 'weekly') {
-        const targetDays = recurrence.days || [];
+        const targetDays = recurrence.daysOfWeek
+          ? recurrence.daysOfWeek.map(d => {
+            const map = { 'sunday': 0, 'monday': 1, 'tuesday': 2, 'wednesday': 3, 'thursday': 4, 'friday': 5, 'saturday': 6 };
+            return map[d.toLowerCase()] !== undefined ? map[d.toLowerCase()] : -1;
+          })
+          : (recurrence.days || []); // Fallback a legacy 'days'
+
         shouldCreate = targetDays.indexOf(dayOfWeek) !== -1;
       } else if (recurrence.frequency === 'monthly') {
         const targetDay = recurrence.dayOfMonth || 1;
@@ -308,11 +409,11 @@ function processRecurringTasksDaily() {
       }
 
       if (!shouldCreate) {
-        Logger.log(`  ⏭️ "${row[colTitle]}" - Hoy no coincide`);
+        // console.log(`  ⏭️ "${row[colTitle]}" - Hoy no coincide`);
         continue;
       }
 
-      // Verificar si ya existe tarea hija para hoy
+      // Verificar si ya existe tarea hija para H O Y
       const existsToday = tasks.some(t => {
         if (t[colParentTaskId] !== row[colId]) return false;
 
@@ -321,36 +422,37 @@ function processRecurringTasksDaily() {
         if (taskDateStr instanceof Date) {
           taskDateStr = Utilities.formatDate(taskDateStr, 'GMT-5', 'yyyy-MM-dd');
         }
-
         return taskDateStr === today;
       });
 
       if (existsToday) {
-        Logger.log(`  ℹ️ "${row[colTitle]}" - Ya existe tarea para hoy`);
+        console.log(`  ℹ️ "${row[colTitle]}" - Ya existe tarea para hoy`);
         continue;
       }
 
       // Crear tarea hija
-      Logger.log(`  ✅ Creando tarea hija para "${row[colTitle]}"`);
+      console.log(`  ✅ Creando tarea hija para "${row[colTitle]}"`);
 
-      const childId = 't' + new Date().getTime() + '_child_' + today;
+      const childId = 't' + new Date().getTime() + '_child_' + today + '_' + Math.floor(Math.random() * 1000);
       const childTitle = `${row[colTitle]} (${today})`;
 
-      const childRow = [];
-      childRow[colId] = childId;
-      childRow[colTitle] = childTitle;
-      childRow[colDescription] = row[colDescription];
-      childRow[colStatus] = 'todo';
-      childRow[colPriority] = row[colPriority];
-      childRow[colAssigneeId] = row[colAssigneeId];
-      childRow[colStartDate] = today;
-      childRow[colDueDate] = today;
-      childRow[colTags] = row[colTags];
-      childRow[colAssigneeIds] = row[colAssigneeIds];
-      childRow[colClientId] = row[colClientId];
-      childRow[colCompletedDate] = '';
-      childRow[colRecurrence] = ''; // Las hijas no son recurrentes
-      childRow[colParentTaskId] = row[colId];
+      const childRow = new Array(headers.length).fill('');
+
+      // Mapear columnas usando índices encontrados
+      if (colId > -1) childRow[colId] = childId;
+      if (colTitle > -1) childRow[colTitle] = childTitle;
+      if (colDescription > -1) childRow[colDescription] = row[colDescription];
+      if (colStatus > -1) childRow[colStatus] = 'todo';
+      if (colPriority > -1) childRow[colPriority] = row[colPriority];
+      if (colAssigneeId > -1) childRow[colAssigneeId] = row[colAssigneeId];
+      if (colStartDate > -1) childRow[colStartDate] = today;
+      if (colDueDate > -1) childRow[colDueDate] = today;
+      if (colTags > -1) childRow[colTags] = row[colTags];
+      if (colAssigneeIds > -1) childRow[colAssigneeIds] = row[colAssigneeIds];
+      if (colClientId > -1) childRow[colClientId] = row[colClientId];
+      if (colCompletedDate > -1) childRow[colCompletedDate] = '';
+      if (colRecurrence > -1) childRow[colRecurrence] = ''; // Hijas no recurrentes
+      if (colParentTaskId > -1) childRow[colParentTaskId] = row[colId];
 
       newChildTasks.push(childRow);
     }
@@ -364,45 +466,88 @@ function processRecurringTasksDaily() {
         headers.length
       ).setValues(newChildTasks);
 
-      Logger.log(`✅ ${newChildTasks.length} tareas hijas creadas para ${today}`);
+      console.log(`✅ ${newChildTasks.length} tareas hijas creadas para ${today}`);
     } else {
-      Logger.log('ℹ️ No se crearon tareas nuevas hoy');
+      console.log('ℹ️ No se crearon tareas nuevas hoy');
     }
 
   } catch (error) {
-    Logger.log(`❌ Error en proceso diario: ${error.toString()}`);
+    console.log(`❌ Error en proceso diario: ${error.toString()}`);
   } finally {
     lock.releaseLock();
   }
 }
 
-/**
- * Crear trigger diario (ejecutar esta función UNA VEZ manualmente)
- * Se ejecutará automáticamente cada día a las 6:00 AM
- */
 function createDailyTrigger() {
-  // Eliminar triggers antiguos primero
   const triggers = ScriptApp.getProjectTriggers();
   for (let i = 0; i < triggers.length; i++) {
-    if (triggers[i].getHandlerFunction() === 'processRecurringTasksDaily') {
+    if (triggers[i].getHandlerFunction() === 'processRecurringTasks') {
       ScriptApp.deleteTrigger(triggers[i]);
     }
   }
 
-  // Crear nuevo trigger diario
-  ScriptApp.newTrigger('processRecurringTasksDaily')
+  ScriptApp.newTrigger('processRecurringTasks')
     .timeBased()
     .everyDays(1)
-    .atHour(6) // 6:00 AM
+    .atHour(6)
     .create();
 
-  Logger.log('✅ Trigger diario creado: Se ejecutará cada día a las 6:00 AM');
+  console.log('✅ Trigger diario creado: SE EJECUTARÁ UNA VEZ AL DÍA (6AM).');
 }
 
-/**
- * Ejecutar manualmente (para testing)
- */
-function runDailyProcessNow() {
-  Logger.log('🚀 Ejecutando proceso diario manualmente...');
-  processRecurringTasksDaily();
+// ============== FUNCIÓN DE PRUEBA MANUAL ==============
+function testCreateRecurringTask() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet();
+  const tasksSheet = sheet.getSheetByName('Tasks');
+  const rowsBefore = tasksSheet ? tasksSheet.getLastRow() : 0;
+
+  const testPayload = {
+    operation: 'create',
+    type: 'task',
+    item: {
+      id: 'test_manual_' + new Date().getTime(),
+      title: 'Tarea de Prueba Manual recurrente ' + new Date().toLocaleTimeString(),
+      description: 'Creada desde el editor de script',
+      status: 'todo',
+      priority: 'high',
+      assigneeId: 'u1',
+      startDate: '2026-01-01',
+      dueDate: '2026-01-31',
+      tags: ['test'],
+      assigneeIds: ['u1'],
+      clientId: 'c1',
+      completedDate: '',
+      recurrence: {
+        frequency: 'weekly',
+        daysOfWeek: ['monday', 'friday'],
+        enabled: true,
+        endDate: '2026-06-30'
+      },
+      parentTaskId: null
+    }
+  };
+
+  console.log('Iniciando prueba manual...');
+  const result = handleIncrementalOperation_Fixed(sheet, testPayload);
+  console.log('Resultado operación:', result.getContent());
+
+  const tasksSheetAfter = sheet.getSheetByName('Tasks');
+  const rowsAfter = tasksSheetAfter.getLastRow();
+  console.log(`Filas antes: ${rowsBefore}, Filas despues: ${rowsAfter}`);
+
+  if (rowsAfter > rowsBefore) {
+    const lastRowValues = tasksSheetAfter.getRange(rowsAfter, 1, 1, 14).getValues()[0];
+    console.log('Valores insertados en la última fila:');
+    console.log('ID:', lastRowValues[0]);
+    console.log('Title:', lastRowValues[1]);
+    console.log('Recurrence (Col 13):', lastRowValues[12]); // index 12 is column 13
+
+    if (lastRowValues[12] && lastRowValues[12] !== '') {
+      console.log('✅ ÉXITO: La columna recurrence TIENE datos.');
+    } else {
+      console.error('❌ ERROR CRÍTICO: La columna recurrence ESTÁ VACÍA.');
+    }
+  } else {
+    console.error('❌ ERROR: No se insertó ninguna fila.');
+  }
 }
